@@ -35,10 +35,10 @@ A 1–2 page internal charter: what the project is, what it is not, what counts 
 
 **Objective:** Lock the data stack so you're not debugging training and data simultaneously.
 
-## Choose core datasets (likely):
+## Choose core datasets (likely:
 
 - 1–2 speech/audio corpora (e.g., LibriSpeech subset, similar to your original plan).
-- Possibly one “emotion / paralinguistic / non-ASR” dataset (RAVDESS or similar) purely as one downstream probe, not the project’s identity.
+- Possibly one "emotion / paralinguistic / non-ASR" dataset (RAVDESS or similar) purely as one downstream probe, not the project's identity.
 - Optional: some music/environmental audio to keep the semantics broad (as in your SA-JEPA plan).
 
 ## Implement audio preprocessing:
@@ -109,7 +109,7 @@ A 1–2 page internal charter: what the project is, what it is not, what counts 
 
 **Objective:** Stop living in toy-land and see whether the latent space starts to look non-trivial.
 
-## Run 1–N “proper” JEPA training jobs:
+## Run 1–N "proper" JEPA training jobs:
 
 - On your Mac (likely smaller batch, more gradient accumulation).
 - On free Colab (~3 hours per day), possibly in short increments with frequent checkpointing.
