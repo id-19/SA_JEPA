@@ -219,3 +219,6 @@ __marimo__/
 
 # General boilerplate
 .DS_Store
+
+# Data files
+Data

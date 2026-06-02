@@ -1,1 +1,0 @@
-This is a JEPA + Mamba based audio to anything model
