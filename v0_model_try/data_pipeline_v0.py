@@ -10,8 +10,9 @@ CLIP_SAMPLES = SAMPLE_RATE * CLIP_LENGTH_SECONDS
 
 N_FFT = 1024
 HOP_LENGTH = 256
-N_MELS = 80
+N_BINS = 80
 EPS = 1e-6
+BATCH_SIZE = 8
 
 AUDIO_EXTS = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
 
@@ -19,7 +20,7 @@ mel_transform = torchaudio.transforms.MelSpectrogram(
     sample_rate=SAMPLE_RATE,
     n_fft=N_FFT,
     hop_length=HOP_LENGTH,
-    n_mels=N_MELS,
+    n_mels=N_BINS,
 )
 
 
@@ -122,7 +123,7 @@ def collate_fn(batch):
     return xs, list(paths)
 
 
-def get_dataloader(root_dir, batch_size=8, shuffle=True, num_workers=0):
+def get_dataloader(root_dir, batch_size=BATCH_SIZE, shuffle=True, num_workers=0):
     dataset = AudioDataset(root_dir)
     return DataLoader(
         dataset,
