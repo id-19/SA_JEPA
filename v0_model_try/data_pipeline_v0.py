@@ -132,3 +132,11 @@ def get_dataloader(root_dir, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
         num_workers=num_workers,
         collate_fn=collate_fn,
     )
+
+if __name__ == "__main__":
+    root_dir = "Data"# Parent directory containing audio files, ../__file__
+    dataloader = get_dataloader(root_dir)
+    for batch in dataloader:
+        xs, paths = batch
+        print(xs.shape)
+        break
