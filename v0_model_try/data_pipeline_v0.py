@@ -4,17 +4,16 @@ import torchaudio
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 
-SAMPLE_RATE = 24000
-CLIP_LENGTH_SECONDS = 5
-CLIP_SAMPLES = SAMPLE_RATE * CLIP_LENGTH_SECONDS
-
-N_FFT = 1024
-HOP_LENGTH = 256
-N_BINS = 80
-EPS = 1e-6
-BATCH_SIZE = 8
-
-AUDIO_EXTS = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
+from config import (
+    SAMPLE_RATE,
+    CLIP_SAMPLES,
+    N_FFT,
+    HOP_LENGTH,
+    N_BINS,
+    EPS,
+    BATCH_SIZE,
+    AUDIO_EXTS,
+)
 
 mel_transform = torchaudio.transforms.MelSpectrogram(
     sample_rate=SAMPLE_RATE,
