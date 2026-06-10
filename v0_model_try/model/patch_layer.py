@@ -67,7 +67,7 @@ class PatchLayer(nn.Module):
         B,F,T = x.shape
         # Shape of x: (B, F, T)
         x = x.unsqueeze(1) # (B, 1, F, T)
-        # Unsqueeze to (B, 1, F, T) - B(atch size, 1 channel, W_in, H_in) 
+        # Unsqueeze to (B, 1, F, T) - (Batch size, 1 channel, W_in, H_in) 
         print("Input shape after unsqueeze:", x.shape)
         for layer in self.layers:
             x = layer(x)
