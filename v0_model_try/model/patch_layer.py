@@ -41,10 +41,10 @@ class PatchLayer(nn.Module):
         self.layers = []
 
         n_layers = int(math.log(freq_dim, frequency_hop)) # Number of layers needed to reduce freq_dim to 1
-        print("Adjusted number of layers based on input dimensions:", n_layers)
+        # print("Adjusted number of layers based on input dimensions:", n_layers)
         
         channel_dims = [(emb_dim//2**i) for i in range(n_layers)][::-1] # Multiply dimensions by 2 every layer, only for the first half of the layers, then keep it constant
-        print("Channel dimensions for each layer:", channel_dims)
+        # print("Channel dimensions for each layer:", channel_dims)
         
         
         for i in range(n_layers):
@@ -66,12 +66,13 @@ class PatchLayer(nn.Module):
         # Shape of x: (B, F, T)
         x = x.unsqueeze(1) # (B, 1, F, T)
         # Unsqueeze to (B, 1, F, T) - (Batch size, 1 channel, W_in, H_in) 
-        print("Input shape after unsqueeze:", x.shape)
+        # print("Input shape after unsqueeze:", x.shape)
         for layer in self.layers:
             x = layer(x)
             # print(layer)
             if not isinstance(layer, nn.ReLU):
-                print("Shape after layer:", x.shape)
+                # print("Shape after layer:", x.shape)
+                pass
         x = x.squeeze(2) # (B, emb_dim, 1, H_out)
         x = x.transpose(1, 2) # (B, H_out, emb_dim) — treat H_out as T_patches
         return x
