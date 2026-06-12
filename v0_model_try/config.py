@@ -8,4 +8,7 @@ N_BINS = 80
 EPS = 1e-6
 BATCH_SIZE = 8
 
+EMB_DIM = 512
+LATENT_DIM = 128
+
 AUDIO_EXTS = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
