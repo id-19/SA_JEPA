@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/id19/Programming/ml_ai_and_data_science/mini-JEPA",
+      "program": "/Users/id19/Programming/ml_ai_and_data_science/mini-JEPA/build/Debug/outDebug"
+    }
+  ]
+}
