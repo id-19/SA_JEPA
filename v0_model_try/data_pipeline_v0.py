@@ -4,7 +4,7 @@ import torchaudio
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 
-from config import (
+from v0_model_try.config import (
     SAMPLE_RATE,
     CLIP_SAMPLES,
     N_FFT,
