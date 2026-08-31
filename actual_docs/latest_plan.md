@@ -19,12 +19,12 @@
 
 
 Current tasks
-1. Define the smallest non-Mamba baseline.
-2. Implement SIGReg as a standalone tested module.
-3. Build the training loop decomposed, not as one blob.
-4. Run a tiny overfit test, then a small real run.
-5. Build out actual Mamba module
-  - Mamba2 to learn
-  - Mamba3 to actually use
-6. Define a Mamba based architecture(make variable using config)
-7. 
+Goal: JEPA + Mamba audio hybrid
+0. Copy paste or code out a very basic Mamba implementation.
+  - You must understand it, is the condition.
+1. Define predictor architecture with Mamba integrated
+2. Do a basic test, embed some data, run predictor and see that it works(model defined)
+3. Setup the training loop, get some epochs running
+4. Setup validation loss, linear probes to measure quality
+5. Iterate on training loop, make it better
+6. Let the loop run for a day or so, get validation that it works
