@@ -22,3 +22,14 @@ class SSM(nn.Module):
         self.A = torch.randn((d_state, d_state))
         self.B = torch.randn((d_input, d_latent))
         self.C = torch.randn((d_state, d_output))
+
+    def forward(self, x: torch.Tensor):
+        if x.shape[-1] != self.d_input:
+            raise Exception("Input to SSM is not of the expected dimensions")
+
+        # Update state
+        self.state = self.A @ self.state + self.B @ x
+
+        # Calculate output
+        output = self.C @ self.state
+        return output
