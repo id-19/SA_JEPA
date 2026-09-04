@@ -53,6 +53,7 @@ class SSM(nn.Module):
         output = self.state @ self.C
         return output
 
+
 def test_const_delta_ssm(d_input = 10, d_latent = 5, d_state = 10, d_output = 5, inputs = torch.randn((10, 10))):
     ssm = SSM(d_input=d_input, d_latent=d_latent, d_state=d_state, d_output=d_output)
     # Go thru the inputs one by one
