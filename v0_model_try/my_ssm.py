@@ -30,7 +30,7 @@ class mySSM(nn.Module):
 
         return sliders * renorm_a
 
-    def forward(self, x):
+    def forward(self, x, debug=False):
         # At every timestep(i.e. every input for del = 1)
         B,T,C = x.shape # C is assumed d_input for now
         outputs = []
@@ -38,10 +38,10 @@ class mySSM(nn.Module):
             # Reset state
             h = torch.zeros(self.d_state)
             step_outs = []
-            print("Batch:", batch)
+            # print("Batch:", batch)
             for time_step in range(T):
                 h = self._eff_a() @ h + x[batch, time_step] @ self.B
-                if time_step % 10 == 0:
+                if time_step % 10 == 0 and debug:
                     print(f"State mean(.abs()) at time step {time_step} : {torch.abs(h).mean(dim=-1)}")
                 out = h @ self.C
                 step_outs.append(out)

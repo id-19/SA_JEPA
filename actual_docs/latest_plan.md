@@ -16,6 +16,16 @@
   - GQA and other non-vanilla attention types
   - (Add more, later, don't waste time now)
   - The new attention residuals and stuff
+  - Dual-timescale memory: leaky fast bank + non-leaky slow bank with learned periodic refresh (cf. Compressive Transformer, LSTM cell state, fast weights)
+
+## SSM Rung Progression (Sep 2026) — v0_model_try/
+0. Toy trainer (train_toy.py, train_toy2.py solo redo) — DONE, wall 0.20245 certified
+1. my_ssm.py naive full-matrix arm (renorm-in-forward 0.9 rowsum + exp(-exp(log_rate)) sliders, BIBO in __main__) — BUILT + CERTIFIED Sep 21, 0.0299 on toy (beats wall 0.20245, near ZOH par 0.06198)
+2. Diagonal arm (delete matrix, 16 sliders, elementwise scan) — next; head-to-head vs arm 1
+3. Selective: input-dependent Delta (Mamba's move)
+4. Mamba block wrapper (conv1d + SiLU gate) — reference: model/Mamba/ (answer-key)
+5. Predictor (task 1) -> 6. Encoder->Predictor forward (task 2) -> 7. Real JEPA loop + SIGREG (task 3) -> 8. Validation/probes (task 4)
+Training ladder: toy 0.20245 wall -> LibriSpeech mel frames (B,T,80) via data_pipeline_v0.py -> predictor.
 
 
 Current tasks
