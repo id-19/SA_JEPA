@@ -9,7 +9,7 @@ phi = 2 * 3.1415 * torch.arange(25).float().unsqueeze(-1) / 25 # Initial phase g
 x = torch.sin(2 * 3.1415 * f * t + phi).unsqueeze(-1) # (f,t, 1) so linear can multiply "channel" easily
 
 torch.manual_seed(0)
-model = mySSM(d_input=1)
+model = mySSM(d_input=1, d_state=25)
 optim = torch.optim.AdamW(model.parameters(), lr=1e-2)
 
 for step in range(2000):
