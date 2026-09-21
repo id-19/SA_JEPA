@@ -19,11 +19,11 @@ class mySSM(nn.Module):
         self.C = nn.Parameter(torch.randn((d_state, d_output)))
 
         # re-norm
-        self.log_rate = nn.Parameter(torch.arange(1., d_state + 1)) # state-wise volume knobs
+        self.log_rate = nn.Parameter(torch.log(torch.arange(1., d_state + 1))) # state-wise volume knobs
 
     def _eff_a(self,):
         # re-norm A
-        renorm_a = 0.9 * self.A / torch.sum(torch.abs(self.A), dim=1, keepdim=True)
+        renorm_a = 0.99 * self.A / torch.sum(torch.abs(self.A), dim=1, keepdim=True)
 
         # volume sliders
         sliders = torch.exp(-torch.exp(self.log_rate)) # Bound between 0 and 1, these scale every row
@@ -42,7 +42,7 @@ class mySSM(nn.Module):
             for time_step in range(T):
                 h = self._eff_a() @ h + x[batch, time_step] @ self.B
                 if time_step % 10 == 0:
-                    print(f"State mean() at time step {time_step} : {h.mean(dim=-1)}")
+                    print(f"State mean(.abs()) at time step {time_step} : {torch.abs(h).mean(dim=-1)}")
                 out = h @ self.C
                 step_outs.append(out)
             # Tensor bana ke, append to the list
