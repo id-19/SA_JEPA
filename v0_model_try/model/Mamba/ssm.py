@@ -1,7 +1,5 @@
 # Define a very basic Mamba block in pytorch
 # Mamba 1 implementation
-from this import d
-
 import torch
 import torch.nn as nn
 
