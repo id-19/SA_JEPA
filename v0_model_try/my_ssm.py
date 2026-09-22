@@ -34,20 +34,18 @@ class mySSM(nn.Module):
         # At every timestep(i.e. every input for del = 1)
         B,T,C = x.shape # C is assumed d_input for now
         assert C == self.d_input
-        outputs = []
         eff_a = self._eff_a()
+        assert torch.sum(torch.abs(eff_a), dim=1).max() <= (0.99 + 1e-6)
         h = torch.zeros((B, self.d_state))
         step_outs = []
         # print("Batch:", batch)
         for time_step in range(T):
-            h = h * eff_a.T + x[:, time_step] @ self.B
+            h = h @ eff_a.T + x[:, time_step] @ self.B # (B, d_state)
             # if time_step % 10 == 0 and debug:
             #     print(f"State mean(.abs()) at time step {time_step} : {torch.abs(h).mean(dim=-1)}")
             out = h @ self.C
             step_outs.append(out)
-        # Tensor bana ke, append to the list
-        outputs.append(torch.stack(step_outs, dim=0))
-        return torch.stack(outputs, dim=0)
+        return torch.stack(step_outs, dim=1)
 
 
 if __name__ == '__main__':
