@@ -21,6 +21,7 @@
 ## SSM Rung Progression (Sep 2026) — v0_model_try/
 0. Toy trainer (train_toy.py, train_toy2.py solo redo) — DONE, wall 0.20245 certified
 1. my_ssm.py naive full-matrix arm (renorm-in-forward 0.9 rowsum + exp(-exp(log_rate)) sliders, BIBO in __main__) — BUILT + CERTIFIED Sep 21, 0.0299 on toy (beats wall 0.20245, near ZOH par 0.06198)
+   - Sep 22: batched rung-1 edit IN FLIGHT (batch loop killed, _eff_a hoisted) — 3 flags open: line 43 `*`→`@`, return shape, missing A_eff assert; timing + gradient allclose pending (band: 4–8×)
 2. Diagonal arm (delete matrix, 16 sliders, elementwise scan) — next; head-to-head vs arm 1
 3. Selective: input-dependent Delta (Mamba's move)
 4. Mamba block wrapper (conv1d + SiLU gate) — reference: model/Mamba/ (answer-key)
