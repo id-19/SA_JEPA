@@ -23,14 +23,14 @@ Board: blind 0.4835 / wall 0.20245 / ZOH par 0.06198 / mine 0.0299 (batched-veri
 
 0. Toy trainer (train_toy.py, train_toy2.py) — DONE, wall 0.20245 certified
 1. Full-matrix arm (my_ssm.py): renorm-in-forward 0.9 rowsum + exp(-exp(log_rate)) sliders — BUILT + CERTIFIED Sep 21 (0.0299); Sep 22: batched rewrite DONE + verified (batch loop killed, `h @ eff_a.T`, `_eff_a` hoisted + asserted in-forward, returns (B,T,d_out); seed-0 ~0.029 = certified number reproduced → same function, faster). Loose end: 4–8× speedup band never formally timed.
-2. Diagonal arm — NEXT: delete matrix, 16 sliders, elementwise scan; head-to-head vs 0.0299 (answers "was the full matrix worth it?"; diagonal is the ablation that justifies selective). Parked: column-renorm variant (dim=0, no transpose) as an arm-1b ablation.
+2. Diagonal arm — theory DONE Sep 23, code NEXT: delete matrix, 16 sliders, elementwise scan; head-to-head vs 0.0299 (answers "was the full matrix worth it?"; diagonal is the ablation that justifies selective). Settled from first principles Sep 23: (a) renorm must go — on a diagonal it deletes A entirely (d(eff)/d(A)≈1e-8, eff = ±0.99·slider); (b) bound is per-entry `|a_j| ≤ 0.99` with learnable sign — and note ‖diag(a)‖₂ = max|a_j| EXACTLY, so no transient-growth gap (the matrix arm only bounds row sums, and singular values can exceed the spectral radius); (c) row ops give singular values, NOT eigenvalues (that was the tangle) — only similarity P⁻¹AP preserves eigenvalues, and a real P cannot diagonalize a matrix with complex eigenvalues (generic: 1000/1000 random renormed 16×16); (d) `exp(-exp(log_rate))` is unusable here (no sign) and Mamba's `-exp(log(1..16))` init is unusable too (no Δ to shrink it → |a| up to 16 → explodes). Known cost, pre-registered: a real `a` hosts only ω=0 or ω=π; 24/25 of the sine board's channels (ω spans 0–1.2063 rad/sample) need other frequencies, so the arm must synthesize oscillation from a real- pole bank. This is the board that maximizes the diagonal's handicap. Parked: column-renorm variant (dim=0, no transpose) as an arm-1b ablation.
 3. Selective: input-dependent Delta (Mamba's actual move — the concept the ladder exists to teach)
 4. Mamba block wrapper (conv1d + SiLU gate) = toy-trainable Mamba on the sine board — reference: model/Mamba/ (answer-key, consult allowed)
 5. Predictor (task 1) -> 6. Encoder->Predictor forward (task 2) -> 7. Real JEPA loop + SIGREG (task 3; trim Epps–Pulley grid) -> 8. Validation/probes (task 4)
 Data ladder: toy sines -> LibriSpeech mel frames (B,469,80) via data_pipeline_v0.py -> full audio.
 
 ## Next steps (one copy, in order)
-1. Diagonal arm head-to-head vs 0.0299 (pre-register curve guess; timing vs full-matrix arm comes free)
+1. Diagonal arm head-to-head vs 0.0299 — write `my_diag_ssm.py`: choose the squash for `|a_j|<0.99` + learnable sign, choose the init rate spread, THEN pre-register the three numbers (loss band / curve shape / speed ratio; the rung-1 4–8× speedup is still untimed and comes free from this run)
 2. Selective arm (input-dependent Delta)
 3. Mamba block wrapper -> toy-train it on the sine board
 4. d_state sweep {4,8,12,16,25,32,64} on the best arm — predict curve shape first
