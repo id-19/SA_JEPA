@@ -11,7 +11,7 @@ class mySSM(nn.Module):
         self.d_output = d_output
 
         # State transition matrices
-        self.A = nn.Parameter(torch.randn((d_state, d_state)))
+        self.A = nn.Parameter(torch.arange(1., d_state + 1))
         # self.proj = nn.Linear(d_input, d_input * 4) # Can just skip this step for now
         self.B = nn.Parameter(torch.randn((d_input, d_state)))
 
@@ -21,26 +21,18 @@ class mySSM(nn.Module):
         # re-norm
         self.log_rate = nn.Parameter(torch.log(torch.arange(1., d_state + 1))) # state-wise volume knobs
 
-    def _eff_a(self,):
-        # re-norm A
-        renorm_a = 0.99 * self.A / torch.sum(torch.abs(self.A), dim=1, keepdim=True)
-
-        # volume sliders
-        sliders = torch.exp(-torch.exp(self.log_rate)) # Bound between 0 and 1, these scale every row
-
-        return sliders * renorm_a
 
     def forward(self, x, debug=False):
         # At every timestep(i.e. every input for del = 1)
         B,T,C = x.shape # C is assumed d_input for now
         assert C == self.d_input
-        eff_a = self._eff_a()
-        assert torch.sum(torch.abs(eff_a), dim=1).max() <= (0.99 + 1e-6)
+        # assert torch.sum(torch.abs(eff_a), dim=1).max() <= (0.99 + 1e-6)
         h = torch.zeros((B, self.d_state))
+        eff_a = torch.exp(-torch.exp(self.log_rate)).unsqueeze(dim=0) # Bound between 0 and 1, these scale every row
         step_outs = []
         # print("Batch:", batch)
         for time_step in range(T):
-            h = h @ eff_a.T + x[:, time_step] @ self.B # (B, d_state)
+            h = h * eff_a + x[:, time_step] @ self.B # (B, d_state) * (1, d_state) + ()
             # if time_step % 10 == 0 and debug:
             #     print(f"State mean(.abs()) at time step {time_step} : {torch.abs(h).mean(dim=-1)}")
             out = h @ self.C
@@ -60,13 +52,13 @@ if __name__ == '__main__':
     # 2. SILENCE: h = A @ h only — the system talks only to its own echoes now.
     # 3. THE WATCH: ||h|| each step. Falls geometrically = stable (memory that forgets).
     #    Grows = a mode with |eigenvalue| > 1 amplifying itself = NaN in training.
-    with torch.no_grad():
-        A_eff = mSSM._eff_a()
-        h = torch.zeros(mSSM.d_state)
-        h = A_eff @ h + torch.randn(1) @ mSSM.B       # the kick (bounded: a single randn)
-        norms = [h.norm().item()]
-        for _ in range(30):                           # silence
-            h = A_eff @ h
-            norms.append(h.norm().item())
-    print("BIBO ||h||:", [f"{n:.4f}" for n in norms[:10]], "...", f"{norms[-1]:.2e}")
-    print("BIBO verdict:", "PASS (state decays)" if norms[-1] < norms[0] else "FAIL (state grows!)")
+    # with torch.no_grad():
+    #     A_eff = mSSM._eff_a()
+    #     h = torch.zeros(mSSM.d_state)
+    #     h = A_eff @ h + torch.randn(1) @ mSSM.B       # the kick (bounded: a single randn)
+    #     norms = [h.norm().item()]
+    #     for _ in range(30):                           # silence
+    #         h = A_eff @ h
+    #         norms.append(h.norm().item())
+    # print("BIBO ||h||:", [f"{n:.4f}" for n in norms[:10]], "...", f"{norms[-1]:.2e}")
+    # print("BIBO verdict:", "PASS (state decays)" if norms[-1] < norms[0] else "FAIL (state grows!)")

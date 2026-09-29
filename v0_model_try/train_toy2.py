@@ -1,4 +1,5 @@
 import torch
+import time
 from my_ssm import mySSM
 
 t = torch.arange(100).float() / 25 # 4 cycles
@@ -10,9 +11,12 @@ x = torch.sin(2 * 3.1415 * f * t + phi).unsqueeze(-1) # (f,t, 1) so linear can m
 
 torch.manual_seed(0)
 model = mySSM(d_input=1, d_state=16)
-optim = torch.optim.AdamW(model.parameters(), lr=1e-3)
+optim = torch.optim.AdamW(model.parameters(), lr=9e-3)
+# print("named params:", [(n, tuple(p.shape)) for n, p in model.named_parameters()])
+# print("eff_a before:", model.eff_a)
+t0 = time.perf_counter()
 
-for step in range(2000):
+for step in range(20000):
     pred = model(x[:, :-1]) # Predictions on all time-steps but last
     loss = ((pred - x[:, 1:]) ** 2).mean() # simple MSE
 
@@ -21,3 +25,5 @@ for step in range(2000):
     optim.step()
     if step % 50 == 0:
         print(f"loss at step:{step} = {loss.item()}")
+print("eff_a after:", model)
+print(f"train time: {time.perf_counter() - t0:.3f}s for {step+1} steps")
