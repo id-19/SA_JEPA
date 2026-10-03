@@ -19,7 +19,7 @@
   - Dual-timescale memory: leaky fast bank + non-leaky slow bank with learned periodic refresh (cf. Compressive Transformer, LSTM cell state, fast weights)
 
 ## SSM Rung Progression (Sep 2026) — v0_model_try/
-Board: blind 0.4835 / wall 0.20245 / ZOH par 0.06198 / mine 0.0299 (batched-verified 22 Sep)
+Board: blind 0.4835 / wall 0.20245 / ZOH par 0.06198 / full-matrix 0.0299 / real-diag 0.053 / S4D rotation 0.02874 (03 Oct, best)
 
 0. Toy trainer (train_toy.py, train_toy2.py) — DONE, wall 0.20245 certified
 1. Full-matrix arm (my_ssm.py): renorm-in-forward 0.9 rowsum + exp(-exp(log_rate)) sliders — BUILT + CERTIFIED Sep 21 (0.0299); Sep 22: batched rewrite DONE + verified (batch loop killed, `h @ eff_a.T`, `_eff_a` hoisted + asserted in-forward, returns (B,T,d_out); seed-0 ~0.029 = certified number reproduced → same function, faster). Loose end: 4–8× speedup band never formally timed.
