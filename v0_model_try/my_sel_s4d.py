@@ -53,15 +53,33 @@ class mySelS4D(nn.Module):
 
     def forward(self, x):
         # TODO(me): the selective scan.
-        #   delta = softplus( x[:,t,:] @ W_delta.T )      -> (B, d_state)
-        #   a_bar = exp(-rate * delta)                    -> (B, d_state)
-        #   b_bar = (1 - a_bar) / (-rate)                 -> (B, d_state)
-        #   h     = a_bar * h + b_bar * (x[:,t,:] @ B)    -> (B, d_state)
-        #   y     = h @ C                                 -> (B, d_output)
-        raise NotImplementedError
+        # Del calculated at each timestep
+        a = -torch.exp(self.log_rate)
+        B, T, C = x.shape
+        assert C == self.d_input, "Input of wrong num channels"
+        h = torch.zeros((B, self.d_state))
+        outputs = []
+        for t in range(T):
+            delta_raw = torch.einsum('bc,sc->bs', x[:,t,:], self.W_delta)
+            delta = torch.log(1+ torch.exp(delta_raw))
+            A_bar = torch.exp(a * delta)
+            B_bar = ((1 - A_bar) / a) * self.B
+            # print(f"A bar: {A_bar.shape}")
+            # print(f"B bar: {B_bar.shape}")
+            h = A_bar * h + B_bar * x[:,t,:]
+            # print(h.shape)
+            # Calculate y
+            y = h @ self.C
+            # print(y.shape)
+            outputs.append(y)
+        outputs = torch.stack(outputs, dim=1)
+        return outputs
 
 
 if __name__ == '__main__':
     m = mySelS4D(d_input=1, d_state=16, d_output=1)
     for name, p in m.named_parameters():
         print(f"{name:10s} {tuple(p.shape)}")
+    dummy_in = torch.sin(torch.randn((10,16,1)))
+    outs = m(dummy_in)
+    print(outs.shape, (outs**2).mean())
