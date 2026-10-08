@@ -31,7 +31,7 @@
 # pre-register before running: the loss band, AND whether delta_t moves at all on
 # 25 stationary sines.
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class mySelS4D(nn.Module):
