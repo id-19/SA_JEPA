@@ -31,6 +31,7 @@ class mySelS4DComplex(nn.Module):
 
         # one COMPLEX pole per channel
         self.log_rate = nn.Parameter(torch.log(torch.arange(1., d_state + 1)))
+        # self.omega = nn.Parameter(torch.arange(-3.14, 3.14, 6.28 / d_state), requires_grad=False)
         self.omega = nn.Parameter(torch.arange(-3.14, 3.14, 6.28 / d_state))
 
         self.B = nn.Parameter(torch.randn(d_input, d_state, dtype=torch.complex64))

@@ -18,8 +18,10 @@
   - The new attention residuals and stuff
   - Dual-timescale memory: leaky fast bank + non-leaky slow bank with learned periodic refresh (cf. Compressive Transformer, LSTM cell state, fast weights)
 
-## SSM Rung Progression (Sep 2026) — v0_model_try/
-Board: blind 0.4835 / wall 0.20245 / ZOH par 0.06198 / full-matrix 0.0299 / real-diag 0.053 / S4D rotation 0.02874 / selective-Delta real-pole 0.019658 (08 Oct) / **selective-Delta COMPLEX 0.01279 @ step 3150 (10 Oct — mid-run of a 20k config, NOT a certified endpoint; 112 real floats vs 64 for the real-pole arm, so mechanism and capacity are still confounded — control = omega frozen at init, OPEN)**
+## SSM Rung Progression — MILESTONE REACHED 10 Oct 2026
+Board: blind 0.4835 / wall 0.20245 / ZOH par 0.06198 / full-matrix 0.0299 / real-diag 0.053 / S4D rotation 0.02874 / selective-Delta real-pole 0.019658 (08 Oct) / **selective-Delta COMPLEX 0.01279 @ step 3150 (10 Oct, mid-run, NOT a certified endpoint) — CAPACITY CONTROL CLOSED 10 Oct: ω frozen at init, same seed/steps/112 floats → 0.019277 @ step 1950 (lands on the real-pole arm's 0.019658); ω trained → 0.013567 @ step 1950 ⇒ the win is the LEARNED ROTATION, not the 1.75× capacity. d_state=8 + trained ω → 0.017606 @ step 1950 (provisional).**
+
+**Where the ladder stands:** 0 (toy trainer) DONE · 1 (full-matrix) CERTIFIED · 2 (diagonal) THEORY DONE, real-diag code landed 0.053 · 3 (selective, real-pole) CLOSED 08 Oct · 3b (selective, complex) LANDED 10 Oct — capacity control CLOSED, the rotation is the mechanism (see board). The SSM-rung ladder has *produced its mechanism*: the input-dependent, complex selective recurrence is built and beats everything below it. Rungs 4–5 (Mamba block wrapper, predictor) are now **infrastructure, not research** — the next real questions are the hybrid ratio, recurrent depth, and JEPA dynamics (the thesis tracks).
 
 0. Toy trainer (train_toy.py, train_toy2.py) — DONE, wall 0.20245 certified
 1. Full-matrix arm (my_ssm.py): renorm-in-forward 0.9 rowsum + exp(-exp(log_rate)) sliders — BUILT + CERTIFIED Sep 21 (0.0299); Sep 22: batched rewrite DONE + verified (batch loop killed, `h @ eff_a.T`, `_eff_a` hoisted + asserted in-forward, returns (B,T,d_out); seed-0 ~0.029 = certified number reproduced → same function, faster). Loose end: 4–8× speedup band never formally timed.
@@ -30,14 +32,27 @@ Board: blind 0.4835 / wall 0.20245 / ZOH par 0.06198 / full-matrix 0.0299 / real
 5. Predictor (task 1) -> 6. Encoder->Predictor forward (task 2) -> 7. Real JEPA loop + SIGREG (task 3; trim Epps–Pulley grid) -> 8. Validation/probes (task 4)
 Data ladder: toy sines -> LibriSpeech mel frames (B,469,80) via data_pipeline_v0.py -> full audio.
 
-## Next steps (one copy, in order)
-1. **ω-freeze control on `my_sel_s4d_complex.py`** — same seed/steps/112 floats, `omega.requires_grad_(False)` (frozen at its ramp init). This is the ONE run that attributes 0.01279 to rotation vs capacity. Pre-register both branches: ≈0.0197 ⇒ rotation works; ≈0.0128 ⇒ it was capacity.
-2. Finish a **clean certified endpoint** for the complex arm — the 0.01279 is step 3150 of a 20k config, so extend to completion (or standardize on 2–5k steps for EVERY arm, and re-certify the real-pole 0.019658 at the same budget so the comparison stays like-for-like).
-3. **Kill the T-loop** (rung-2 thread, now with a measured 20× ceiling): `h_t` expanded in `h_0` as an associative scan. Bonus: makes MPS/GPU finally worth using.
-4. **Clean two residue in train_toy2.py**: the dead `device = torch.mps` line (MPS measured 4.3× slower — either delete it or don't use it) and the fact that `x` is still single-channel while the model is exercised at `d_input=80` in its `__main__`.
-5. Mamba block wrapper -> toy-train it on the sine board
-6. d_state sweep {4,8,12,16,25,32,64} on the best arm — predict curve shape first
-7. LibriSpeech mel frames through the best SSM (audio smoke, B=8)
-8. Predictor -> encoder-predictor forward -> JEPA loop + SIGREG
+## Next steps (one copy, in order) — re-looked 10 Oct, after rung 3b
+The memory mechanism is built. What's left falls into two piles: **(A) close the rung-3 evidence cleanly** so the 0.01279 means something, and **(B) the thesis tracks** — hybrid ratio, recurrent depth, JEPA loop — which are now the real research. D is written as a spec early, built after the dense core exists.
+
+**A — finish the attribution (this week's real scientific work):**
+1. ~~**ω-freeze control**~~ — **DONE 10 Oct.** ω frozen at init (same seed/steps/112 floats) → 0.019277 @ step 1950 ≈ the real-pole 0.019658; ω trained → 0.013567 @ step 1950. **Rotation does the work; the extra capacity alone buys nothing.** Side result: `d_state=8` + trained ω → 0.017606 @ 1950 (provisional, mid-run).
+2. **Standardize the steps budget** (2–5k for EVERY arm) and re-certify the real-pole 0.019658 at the same budget, so the comparison is like-for-like. Then a clean certified endpoint for the complex arm.
+
+**B — the thesis tracks (the actual research now):**
+3. **The transition board** — 25 waves that switch frequency mid-sequence, where selective Δ *should* win decisively and the fixed arm should pay ghost error on segment B. This is the test that justifies selectivity's existence, and it plugs directly into the hybrid question.
+4. **Hybrid probe on toy data** — 3 delta-rule blocks : 1 gated-attention block, at fixed params. Pre-register: does the attention layer move the loss at all at this scale? (This is the first measurement of the ratio question, before any real model exists.)
+5. **Recurrent-depth probe** — one shared block, looped R times; loss vs R. Watch for the CART failure mode (recurrence vestigial at your width).
+6. **JEPA collapse dynamics on toy data** — tiny transformer pair, EMA + stop-grad, SIGREG *and* Gaussian regularizer; instrument for the three silent collapses. Learn it on a model that trains in seconds.
+
+**C — infrastructure, only when A closes (in order, no research here):**
+7. Kill the T-loop (associative scan; measured 20× ceiling, makes MPS worth using). **DERIVATION DONE 10 Oct:** unroll `h_t` in `h_0` — every `u_k` is carried by the A's AFTER it (`h₃ = A₃A₂u₁ + A₃u₂ + u₃`); a block is the pair `(M,V)`; merge is `(M_R M_L, M_R V_L + V_R)`; with `h_0=0` the scan's V *is* `h_t`; leaf pair `(A_t, u_t)`. **NEXT SESSION STARTS HERE:** build δ / A_bar / u for all t at once (batched einsums), then log₂T doubling merge rounds.
+8. Clean two residue in train_toy2.py (dead `device = torch.mps` line; `x` still single-channel while `__main__` exercises d_input=80).
+9. Mamba block wrapper → toy-train on the sine board.
+10. d_state sweep {4,8,12,16,25,32,64} on the best arm.
+11. LibriSpeech mel frames through the best SSM (audio smoke, B=8).
+12. Predictor → encoder-predictor forward → JEPA loop + SIGREG on real data.
+
+**D — the memory hierarchy (spec now, build after the dense core):** the residency map (which layers are hot/cold/stream, what grows with T) written as one page BEFORE the dense core; SSD benchmark the day the drive arrives; MemTensor abstraction; the int4 page file with a speech-locality prefetch predictor. Nothing here is built until the track-C core exists.
 
 Working rules: he writes+commits all code; pose problems, not edits; pre-register guesses before runs; print the board beside every loss; journal 3+1 ≤200w AI-written per session day; triage by AI-assisted-ML transfer or SA-JEPA/alignment value.

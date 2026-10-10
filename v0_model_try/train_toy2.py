@@ -15,7 +15,7 @@ x = torch.sin(2 * 3.1415 * f * t + phi).unsqueeze(-1) # (f,t,1) so linear can mu
 torch.manual_seed(0)
 # model = mySSM(d_input=1, d_state=16)
 device = torch.mps
-model = mySelS4DComplex(d_input=1, d_state=16, d_output=1)
+model = mySelS4DComplex(d_input=1, d_state=8, d_output=1)
 optim = torch.optim.AdamW(model.parameters(), lr=5e-3, weight_decay=0.0)
 # print("named params:", [(n, tuple(p.shape)) for n, p in model.named_parameters()])
 # print("eff_a before:", model.eff_a)
