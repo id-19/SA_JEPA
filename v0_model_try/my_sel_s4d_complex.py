@@ -1,17 +1,23 @@
 # my_sel_s4d_complex.py — selective Delta, complex pole: a = -rate + i*omega
 #
 # contract:
-#   in   (B, T, d_input)          out (B, T, d_output)
-#   state    h = (B, d_state, 2)              re, im per channel
-#   log_rate (d_state,)   rate = exp(log_rate)
-#   omega    (d_state,)
-#   B        (d_input, d_state, 2)     C (d_state, 2, d_output)
-#   W_delta  (d_state, d_input)        REAL -- delta is a duration
-#   delta per step from x: (B, d_state).  rho = exp(-rate*delta), theta = omega*delta
+#   in   (B, T, d_input)                    out (B, T, d_output)   REAL
+#   state  h = (B, d_state)                COMPLEX64 -- one complex number per channel
+#   log_rate (d_state,)  rate = exp(log_rate)
+#   omega    (d_state,)  one rotation per channel
+#   a        = -rate + i*omega             COMPLEX64
+#   B        (d_input, d_state)  COMPLEX64  C (d_state, d_output) COMPLEX64
+#   W_delta  (d_state, d_input)  REAL       delta is a duration, not a rotation
+#   delta per step from x: (B, d_state), real, = softplus(x_t @ W_delta)
 #
-# W_delta -> 0 makes delta constant: every channel shares one rotation.
+# per step:  A_bar = exp(a*delta)   B_bar = (1 - A_bar)/a
+#            kick  = x_t @ B        h = h*A_bar + B_bar*kick
+#            y     = Re(<h, conj(C)>)          <- conj is load-bearing
 #
-# board: wall 0.20245 / real-pole par 0.053 / S4D 0.02874 / selective real-pole 0.02070
+# watch: W_delta -> 0 makes delta the SAME constant for every channel and every
+#        step -- one shared rotation, and the arm tests nothing.
+#
+# board: wall 0.20245 / real-pole par 0.053 / S4D 0.02874 / selective real-pole 0.019658
 import torch
 from torch import nn
 

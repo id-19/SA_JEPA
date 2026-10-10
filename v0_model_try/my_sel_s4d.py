@@ -61,7 +61,7 @@ class mySelS4D(nn.Module):
         outputs = []
         for t in range(T):
             delta_raw = torch.einsum('bc,sc->bs', x[:,t,:], self.W_delta)
-            delta = torch.log(1+ torch.exp(delta_raw))
+            delta = torch.log(1+ torch.exp(delta_raw)) # Softplus
             A_bar = torch.exp(a * delta)
             B_bar = ((1 - A_bar) / a) * self.B
             # print(f"A bar: {A_bar.shape}")
