@@ -297,11 +297,11 @@ guess with confidence, and a playable reconstruction.
 | probe | result | floor / ceiling |
 |---|---|---|
 | Held-out reconstruction | 764 → **17.1 dB²** (mel) | — |
-| Effective rank of latents | 8.6 → **20.8** (no collapse) | 256 max |
-| Speaker ID, linear probe on FROZEN latents (38 classes, n = 599) | **0.991 ± 0.003** | blind 0.040; USM reference 0.9996 |
+| Effective rank of latents | 8.6 → **20.8** in-run; held-out **21.9** per frame, but **6.7 after utterance pooling** | 256 max |
+| Speaker ID, linear probe on FROZEN latents (37 classes, n = 599) | **0.991 ± 0.003** | blind 0.040; USM reference 0.9996 |
 | Speech vs music (music = synthetic, labelled) | **1.000** | 0.500 |
-| Decoder autoencode (mel corr) | **0.964** | Griffin–Lim pipeline ceiling 0.997 |
-| Decoder on frozen latents (beats joint training) | **0.971** | — |
+| Decoder autoencode (mel corr) | **0.964** (19.45 dB²) | Griffin–Lim pipeline ceiling 0.997 |
+| Decoder on frozen latents (fresh decoder, 1200 steps, 400 windows) | **corr 0.971** (15.86 dB²) — *better* than the jointly-trained one | joint: 0.964 |
 | 1 s-ahead prediction | **FAILS** — corr 0.44, 268 dB², flat | > 0.9 |
 
 ### 10.2 "Not gibberish", tested directly (`_verify_infer_spec.py`, `runs/verify_infer_spec.log`)
@@ -344,6 +344,10 @@ stays the training default.
 * Isotropy λ = 1 now holds eff-rank **20.8** at full scale (it was ≈ 7.5 in the small runs where
   λ = 4 looked like the next step) — the earlier note that the constant was under-tuned is obsolete
   for v0; λ remains worth sweeping, not fixing.
+* The latents are **frame-diverse but utterance-uniform**: effective rank is 21.9 measured per
+  frame yet only **6.7 after pooling each utterance to its mean** (var spans 0.29–12.2). Frame-level
+  structure is rich; what varies *between* utterances is concentrated in few directions. Worth
+  knowing before building anything that keys off utterance-level similarity.
 * MPS is *not* the fast path on this machine: at bs = 8 CPU fp32 is 2.8× MPS on throughput, and bf16
   (though verified numerically equivalent) buys no speed. GPU/MPS is a portability option, not a win.
 * No text modality: adding one is a separate contrastive rung, not a switch to flip.
