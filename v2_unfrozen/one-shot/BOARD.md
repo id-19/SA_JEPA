@@ -53,8 +53,13 @@
 - **Closed-form chunk inverse does NOT exist for decayed (a<1) delta rule** — verified three
   candidate M-forms, all fail; error-correcting writes make transitions state-dependent
   (unlike linear attention). Gated DeltaNet's chunk form = separate follow-up with real math.
-- Speed: CPU bs=4 T=120 **147 ms/step (was ~1300)**. MPS still launch-bound at small batch
-  (496 ms — use CPU for toy gates, MPS only at bs≥32 where 3.5 s/step ≈ 13× CPU throughput).
+- Speed: CPU bs=4 T=120 **147 ms/step (was ~1300)**.
+- **CORRECTED 15 Oct (real sweep, bs 8/16/32, T=250 — the earlier "MPS at bs≥32" note was wrong):**
+  MPS throughput is *flat* at **1.1 kframe/s for bs 8 and 16** (launch-bound: constant per-frame
+  cost as batch grows) and collapses to 0.3 kframe/s at bs=32 (24.3 s/step, swap → 8.5 GB, the
+  8 GB machine thrashes). CPU bs=8 fp32 = **609 ms/step, 3.3 kframe/s, 1.13 GB peak** — the best
+  configuration on this machine and the one v0 trains with. CPU bs=16/32 are 3806/8839 ms/step
+  (memory-pressure cliff). bf16 autocast on CPU is 19× *slower* (12.1 s/step) — never use it there.
 
 ## Run gates (from DESIGN_v0 §5)
 
@@ -62,3 +67,18 @@
 2. seeded determinism → bit-identical
 3. α=0 collapse demo (eff-rank craters) vs α=1.0 stable
 4. first real run: 5k steps, bs 8, 10 s windows
+
+## Parallel scan (log-depth) — 15 Oct
+
+- Chunk carry is **affine in the state**: `S_out = S_in·M_c + b_c`, `M_c = I − W_cᵀK_c`,
+  `b_c = U_cᵀK_c`, computable for every chunk independently. Affine maps compose associatively
+  (`(S·M₁+b₁)·M₂+b₂ = S·(M₁M₂) + (b₁M₂+b₂)`), so chunk incoming states come from a
+  **Hillis–Steele prefix scan**: sequential depth `N_chunks → log₂(N_chunks)`.
+  T=500: 8 → 3 sequential steps; T=1024: 16 → 4.
+- Verified three ways: parallel vs sequential loop ≤ **7.2e-07**, and both vs the per-step
+  definition ~6e-07 (fp32 rounding). Smoke 6/6. `_chunk_scan_parallel` in `model.py`,
+  dispatch flag `DeltaCore.parallel_scan`; sequential loop kept as the reference.
+- **Prior art existed in this repo the whole time**: `v0_model_try/parallel_scan.py`
+  (untracked, mtime 13 Oct 09:00 — two days before the sequential v2 scan) already stated the
+  affine composition rule and the doubling scan plan, with the note that it removes the loop
+  and is much faster. It was never consulted; now tracked. See `POSTMORTEM_EVIDENCE.md`.

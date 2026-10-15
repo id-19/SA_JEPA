@@ -63,7 +63,9 @@ def main():
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--out", default=str(HERE / "runs" / "v0"))
-    ap.add_argument("--eval-every", type=int, default=400)
+    ap.add_argument("--eval-every", type=int, default=200)
+    ap.add_argument("--log-every", type=int, default=25)
+    ap.add_argument("--nproj", type=int, default=128)
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
 
@@ -77,6 +79,7 @@ def main():
 
     model = SAJePAV0().to(a.device)
     model.sigreg_isotropy = a.iso
+    model.sigreg_nproj = a.nproj
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=0.0)
     floors = {1: (293.9, 81.7), 10: (292.4, 283.6), 50: (260.3, 274.2), 150: (280.4, 292.9)}
 
@@ -85,7 +88,13 @@ def main():
     yev = [m[0].split("-")[0] for m in mev]
 
     t0 = time.time()
+    t_last = t0
     for it in range(a.steps + 1):
+        if it and it % a.log_every == 0:
+            rate = (time.time() - t_last) / a.log_every * 1000
+            print(f"  . step {it:>5} | {rate:6.0f} ms/step | "
+                  f"eta {(a.steps - it) * rate / 60000:.0f} min", flush=True)
+            t_last = time.time()
         if it % a.eval_every == 0 or it == a.steps:
             model.eval()
             with torch.no_grad():
