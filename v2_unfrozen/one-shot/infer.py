@@ -52,6 +52,10 @@ def main():
     model = SAJePAV0().eval().to(args.dev)
     load_ckpt(model, args.ckpt)
     dep = torch.load(args.deploy, map_location="cpu")
+    # sklearn fits in float64 and torch.save keeps that dtype; the encoder emits float32.
+    # Mixed-dtype matmul raises, so normalise every float tensor to float32 once, here.
+    dep = {k: (v.float() if torch.is_tensor(v) and v.is_floating_point() else v)
+           for k, v in dep.items()}
 
     if args.text and not args.wav:
         wav_path = text_to_wav(args.text, out / "text_input.wav")
@@ -75,15 +79,14 @@ def main():
         zp = z.mean(1).cpu()
 
         # --- tag probe (speech vs music)
-        tag_x = (zp.numpy() - dep["tag_mu"].numpy()) / dep["tag_sd"].numpy()
-        p_music = float(torch.sigmoid(torch.tensor(tag_x @ dep["tag_coef"][0].numpy()
-                                                   + dep["tag_b"][0].item())))
+        tag_x = (zp - dep["tag_mu"]) / dep["tag_sd"]
+        p_music = float(torch.sigmoid(tag_x @ dep["tag_coef"][0] + dep["tag_b"][0]))
         tag = "music-like" if p_music > 0.5 else "speech-like"
         print(f"\n[tag] {tag} (p_music={p_music:.2f})   [probe on frozen latents]")
 
         # --- speaker identification (linear probe over enrolled speakers)
-        sx = (zp.numpy() - dep["spk_mu"].numpy()) / dep["spk_sd"].numpy()
-        logits = torch.tensor(sx @ dep["spk_coef"].T + dep["spk_b"])
+        sx = (zp - dep["spk_mu"]) / dep["spk_sd"]
+        logits = sx @ dep["spk_coef"].T + dep["spk_b"]
         prob = torch.softmax(logits, -1)[0]
         top = torch.topk(prob, 3)
         tops = [(dep["spk_classes"][i], float(p)) for p, i in zip(top.values, top.indices)]
@@ -93,11 +96,14 @@ def main():
             print("          -> low confidence: likely a speaker NOT in the enrolled set")
 
         # --- nearest training utterance (cosine over reference pool)
+        # Careful: F.cosine_similarity((1,C), (N,C), dim=-1) BROADCASTS to (N,C) and returns N
+        # similarities, not one -- indexing [0] then silently returns the first reference's score.
+        # Normalise and matmul explicitly so the shape is unambiguous.
         ref = dep["ref_emb"].float()
-        sim = F.cosine_similarity(zp, ref, dim=-1)[0]
+        sim = (F.normalize(zp, dim=-1) @ F.normalize(ref, dim=-1).T)[0]  # (N,) one score per ref
         k = int(sim.argmax())
         print(f"[nearest] {dep['ref_utts'][k]} (speaker {dep['ref_spk'][k]}), "
-              f"cosine {float(sim[k]):.3f}")
+              f"cosine {sim[k]:.3f}  [best of {len(sim)} reference utterances]")
 
         # --- decoded audio
         rec = model.decoder(z)
@@ -106,15 +112,24 @@ def main():
         p10 = model.decoder(preds[HORIZONS.index(10)][:, : max(1, nf - 10)])
 
         rec_mse = F.mse_loss(rec, x).item()
-        ok = min(nf - 50, nf - 50)
-        pred_mse = F.mse_loss(p50[:, :ok], z[:, 50:50 + ok].clone()).item()
+        # NOTE: p50/p10 above are DECODED MEL, not latents -- comparing them against z (256-d
+        # latents) is a shape mismatch. Keep the latent comparison in latent space and add the
+        # mel-space number, which is the interpretable one for audio.
+        zpred = preds[p50i]
+        ok = min(zpred.shape[1], z.shape[1] - 50)
+        pred_lat_mse = F.mse_loss(zpred[:, :ok], z[:, 50:50 + ok].clone()).item()
+        okm = min(p50.shape[1], x.shape[1] - 50)
+        pred_mel_mse = F.mse_loss(p50[:, :okm], x[:, 50:50 + okm]).item()
         print(f"\n[decoder] input autoencode mel-MSE {rec_mse:.2f} dB² | "
-              f"1s-ahead latent-MSE {pred_mse:.4f}")
+              f"1s-ahead latent-MSE {pred_lat_mse:.4f} | 1s-ahead mel-MSE {pred_mel_mse:.2f} dB²")
 
         paths = [
             save_wav(out / "decoded_input.wav", mel_db_to_wav(rec[0].cpu())),
-            save_wav(out / "decoded_pred_0.2s.wav", mel_db_to_wav(p10[0].cpu())),
-            save_wav(out / "decoded_pred_1s.wav", mel_db_to_wav(p50[0].cpu())),
+            # These two are the model's imagination of the WHOLE overlapping span, decoded:
+            # p10 covers frames t+10.., p50 covers t+50.., i.e. what the clip "looks like" when
+            # predicted 0.2 s / 1 s ahead, not a 0.2 s / 1 s snippet.
+            save_wav(out / "decoded_from_pred_0.2s.wav", mel_db_to_wav(p10[0].cpu())),
+            save_wav(out / "decoded_from_pred_1s.wav", mel_db_to_wav(p50[0].cpu())),
             save_wav(out / "input_reference.wav", mel_db_to_wav(mel)),
         ]
     print("\nwrote:")

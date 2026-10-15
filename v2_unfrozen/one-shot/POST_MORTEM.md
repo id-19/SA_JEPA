@@ -22,13 +22,38 @@ note in this repo (Oct 13), and the earlier "T-loop scan derivation" commit. `gi
 "M_R.V_L"` returns nothing before today, so the scratch note was never in git history — but the
 skill file was on disk the entire time, and the script was runnable.
 
-### 1.1 A caveat from the reference that we must respect when judging the scan
-`references/parallel-scan.md` pitfall 6 says the scan's advantage **depends on the baseline**:
-against a 3-op loop it *loses* at T=99 (0.57×) and only wins at T=400 (8.2×), while against the
-arm's real forward it wins at every shape. So the measured "~10% per-frame change at T=250" is
-not evidence that the scan was pointless — the reference predicts the win grows with T and
-shrinks with a stripped baseline. Settling this requires an op-count profile at several T
-(**pending**), not another single-config wall-clock.
+### 1.1 The scan's payoff, MEASURED — and it is not what anyone claimed (not even me)
+`references/parallel-scan.md` pitfall 6 warns the scan's advantage depends on baseline and T, so
+this needed an op-count profile, not another single-config timer. `_profile_scan_depth.py`
+(bs=4, fwd+bwd, T = 100/250/500, seq vs parallel) settles it:
+
+| T | ops seq | ops parallel | ms/frame cpu (seq → par) | ms/frame mps (seq → par) |
+|---|---|---|---|---|
+| 100 | 78,830 | 88,328 | 0.363 → 0.355 (1.02×) | 1.184 → 1.158 (1.02×) |
+| 250 | 155,232 | 182,574 | 0.289 → 0.291 (0.99×) | 0.980 → 0.919 (1.07×) |
+| 500 | — | 394,302 | 0.299 → 0.333 (**0.90×**) | 0.944 → 0.937 (1.01×) |
+
+Three things fall out, and the first one retracts a claim made earlier in this very document:
+
+1. **The parallel scan issues MORE ops, not fewer** (+12% at T=100, +18% at T=250). It reduces
+   sequential *depth*; it does not reduce the number of ops handed to the device, because the
+   scan performs log-depth work over every chunk with the same-shaped tensor ops. The dominant
+   ops in both variants are `as_strided` / `select` / `resolve_conj` — pure view/aliasing
+   metadata, i.e. the cost is per-frame indexing work, not loop structure.
+2. **Per-frame cost is flat in T for BOTH variants** (cpu 0.36 → 0.29 → 0.30 ms/frame). There was
+   never a per-chunk-loop penalty visible at this scale (N_chunks = 4–8) — the loop's serial
+   steps cost less than the per-frame elementwise work that dominates.
+3. **Therefore the scan is not a meaningful optimization at this scale**: ≤7% on MPS, ~0% on
+   CPU, and 10% *slower* on CPU at T=500. The premise "fewer sequential kernel launches is
+   precisely what MPS is starved for" is measurably false here: op count went up and wall-clock
+   did not move, because eager-mode async dispatch already overlaps launch overhead with CPU
+   run-ahead. Where depth genuinely pays is `torch.compile`/fusion, CUDA-graph capture, or T in
+   the thousands where Python-level loop overhead and sync points accumulate — all untested
+   here, and the honest label until then is **"more parallel, not yet faster"**.
+
+This is the third instance of the same lesson in this document: the sequential chunk loop was
+*correct and adequate*, and the real defect was that nobody had measured which resources were
+actually binding.
 
 ## 2. Root causes
 
@@ -84,7 +109,10 @@ that looks measured but isn't.
 | 6 smoke suite | shapes, causality, BIBO, grad flow | correctness only, no perf assertions |
 
 All five are correctness gates. The defect was a *performance* defect that was perfectly
-correct. Nothing in the suite had a performance assertion, so a 3× launch penalty was free.
+correct — and, as §1.1 measures, a **small** one (≤7% wall-clock, sometimes negative): the
+missing gate cost a day of work chasing a depth win that this scale does not convert into
+wall-clock, and produced an over-claimed "3× launch penalty" framing that the profile then
+refuted. Nothing in the suite had a performance assertion, so nobody could tell the difference.
 
 ## 3. Prevention rules (adopted)
 
@@ -111,6 +139,13 @@ correct. Nothing in the suite had a performance assertion, so a 3× launch penal
 
 The sequential loop wasn't a knowledge gap about how to parallelise — the answer was already
 written down here. It was a *search* gap plus a *definition-of-done* gap: correctness against a
-reference was the only bar, so an implementation that was correct-but-serial passed
-everything. The fixes above add the missing question ("what does the repo already know, and how
-deep is this really?") at the two points where it was absent.
+reference was the only bar, so an implementation that was correct-but-serial passed everything.
+
+But the profile in §1.1 forces a second, less flattering conclusion: **the loop was also not the
+performance problem it was assumed to be.** Sequential depth 8 → 3 is real, verified, and buys
+≤7% wall-clock (and −10% on CPU at T=500), because per-frame cost is flat in T in both variants
+and the op count actually rises. The failure wasn't "we shipped something slow"; it was "we
+spent a day fixing a bottleneck nobody had measured, and told ourselves a story about it
+(`MPS is starved for launches`) that the measurement contradicts." The search rule and the
+depth-budget rule are worth keeping. The one that would have saved the most time is the
+cheapest: **measure which resource is binding before optimising it.**

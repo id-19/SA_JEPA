@@ -229,3 +229,6 @@ data/latents/
 
 # v2 one-shot artifacts: checkpoints, logs, generated audio (regenerable; see BUILD_LOG.md)
 v2_unfrozen/one-shot/runs/
+v2_unfrozen/one-shot/runs/*.pt
+v2_unfrozen/one-shot/runs/*/
+v2_unfrozen/one-shot/runs/*.wav

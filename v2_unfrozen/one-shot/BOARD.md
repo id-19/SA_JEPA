@@ -38,6 +38,9 @@
   α=0: var craters to 0.00. α=1.0: var mean ~0.9 held, eff-rank ~13.
 - **Gate 4 (T=250, bs=8, α=0.01): FAIL — full collapse.** Per-frame var → 0, trivial loss 1e-4,
   spk probe 0.000. α=0.01 has no anti-collapse power at scale; fine only for gate-1 memorization.
+  *[15 Oct: the "collapsed" verdict stands on var→0 + trivial loss (both real computations), but
+  `spk 0.000` was **never a measurement** — that probe returned a fabricated 0.0 from an
+  `except ValueError` and could not run at all. See `POST_MORTEM.md` §2.3.]*
 - **Gate 4 (α=1.0, base sigreg): slow spectrum collapse.** Estimator satisfied (sigreg ~0.21,
   per-dim var mean ~0.8) while eff-rank 10.9 → 6.0 (step 300) → 4-5 (step 1200), var[min] → 0,
   spk 0.000. Two-moment mean-variance per random direction cannot see fat-dim concentration.
@@ -78,7 +81,53 @@
 - Verified three ways: parallel vs sequential loop ≤ **7.2e-07**, and both vs the per-step
   definition ~6e-07 (fp32 rounding). Smoke 6/6. `_chunk_scan_parallel` in `model.py`,
   dispatch flag `DeltaCore.parallel_scan`; sequential loop kept as the reference.
+- **Profiled — and it is NOT faster at this scale (15 Oct, `_profile_scan_depth.py`, bs=4,
+  fwd+bwd):** the scan issues **more ops** than the loop (+12% at T=100, +18% at T=250) and buys
+  ≤7% wall-clock on MPS, ~0% on CPU, and **−10% on CPU at T=500**. Per-frame cost is flat in T
+  for BOTH variants (cpu 0.36/0.29/0.30 ms per frame at T=100/250/500), and the dominant ops are
+  `as_strided`/`select`/`resolve_conj` views — i.e. the binding cost is per-frame indexing work,
+  not loop structure. Depth 8 → 3 is real and stays; the win would show up under
+  `torch.compile`/fusion, graph capture, or much larger T — untested. Label: **more parallel,
+  not yet faster**. See `POST_MORTEM.md` §1.1.
 - **Prior art existed in this repo the whole time**: `v0_model_try/parallel_scan.py`
   (untracked, mtime 13 Oct 09:00 — two days before the sequential v2 scan) already stated the
   affine composition rule and the doubling scan plan, with the note that it removes the loop
-  and is much faster. It was never consulted; now tracked. See `POSTMORTEM_EVIDENCE.md`.
+  and is much faster. It was never consulted; now tracked. A third source predates it: the
+  coaching skill's own `references/parallel-scan.md` + `scripts/parallel_scan_ref.py`
+  (11 Oct) carry the identical merge rule and a runnable verified implementation. See
+  `POST_MORTEM.md`.
+
+## v0 run — first real training, 2000 steps (15 Oct, the v0 deliverable)
+
+`cpu fp32, bs=8, T=250, 6 Δ-blocks + 2 GQA, d=256, α=1.0 + isotropy, 28.3 min`
+
+| step | held-out recon mel-MSE | eff-rank | var[min,mean,max] |
+|---|---|---|---|
+| 0 | 764 dB² | 8.6 | — |
+| 400 | 43.7 | 11.7 | [0.31, 0.81, 2.37] |
+| 1200 | 24.1 | 18.6 | [0.32, 0.81, 4.98] |
+| 2000 | **17.1** | **20.8** | [0.31, 0.72, 11.28] |
+
+**No collapse**: eff-rank *grows* 8.6 → 20.8 and var[min] stays ~0.31 across 2000 steps — the
+isotropy fix holds at scale where the plain α=1.0 arm decayed 10.9 → 4-5. Reconstruction improves
+monotonically (764 → 17.1 dB²); var[max] 11.3 shows a few fat dims the two-moment estimator still
+doesn't see (the kurtosis term remains open).
+
+## Evidence suite (`evidence_v0.py`, ckpt `runs/v0`) — 15 Oct
+
+| probe | result | reference / floor |
+|---|---|---|
+| Speaker, frozen latents, linear | **0.991 ± 0.003** | blind 0.040 (37 classes, n=599); USM ref 0.9996 |
+| Speech-vs-music, frozen latents | **1.000 ± 0.000** | 0.500 floor (n=96, *synthetic* music — easy) |
+| Decoder autoencode | mel-MSE **19.5 dB², corr 0.964** | — |
+| Decoder trained on *frozen* latents (ablation) | **15.9 dB², corr 0.971** | beats the joint decoder → the repr is genuinely decodable, not decoder co-adaptation |
+| 1 s-ahead: latent-MSE / mel-MSE | 0.667 / **224.7 dB², corr 0.440** | **FAILS** — flat, structureless spectrogram (see `mel_reconstruction.png`) |
+| Geometry | eff-rank 21.9 frames / 6.7 utt-pooled | var[0.29, 0.74, 12.22] |
+
+**Honest read: classification and reconstruction work; prediction does not.** The 1 s-ahead panel
+is a mean-ish band with no harmonics or formants — 224.7 dB² is ~13× worse than the 17.1 dB²
+autoencode and well above the 260 dB² blind bar's *frame-level* analogue. v0 (2000 steps, 8 GB,
+30 min) shows the encoder/decoder stack is sound and the predictor needs real work.
+
+Artifacts: `runs/evidence/{latent_pca,state_trajectories,mel_reconstruction}.png`,
+`runs/evidence/*.wav`, `runs/evidence/evidence.json`, `runs/evidence/deploy.pt`.
