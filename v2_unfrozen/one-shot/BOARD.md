@@ -81,14 +81,16 @@
 - Verified three ways: parallel vs sequential loop ≤ **7.2e-07**, and both vs the per-step
   definition ~6e-07 (fp32 rounding). Smoke 6/6. `_chunk_scan_parallel` in `model.py`,
   dispatch flag `DeltaCore.parallel_scan`; sequential loop kept as the reference.
-- **Profiled — and it is NOT faster at this scale (15 Oct, `_profile_scan_depth.py`, bs=4,
-  fwd+bwd):** the scan issues **more ops** than the loop (+12% at T=100, +18% at T=250) and buys
-  ≤7% wall-clock on MPS, ~0% on CPU, and **−10% on CPU at T=500**. Per-frame cost is flat in T
-  for BOTH variants (cpu 0.36/0.29/0.30 ms per frame at T=100/250/500), and the dominant ops are
-  `as_strided`/`select`/`resolve_conj` views — i.e. the binding cost is per-frame indexing work,
-  not loop structure. Depth 8 → 3 is real and stays; the win would show up under
-  `torch.compile`/fusion, graph capture, or much larger T — untested. Label: **more parallel,
-  not yet faster**. See `POST_MORTEM.md` §1.1.
+- **Profiled — and the prefix scan is NOT faster than the CHUNKWISE loop it replaced (15 Oct,
+  `_profile_scan_depth.py`, bs=4, fwd+bwd):** the scan issues **more ops** (+12% at T=100, +18% at
+  T=250) and buys ≤7% wall-clock on MPS, ~0% on CPU, and **−10% on CPU at T=500**. Per-frame cost
+  is flat in T for BOTH variants (cpu 0.36/0.29/0.30 ms per frame at T=100/250/500) and the
+  dominant ops are `as_strided`/`select`/`resolve_conj` views, so the binding cost is per-frame
+  indexing work. **Baseline matters**: this compares prefix-scan vs *chunkwise*; the earlier
+  per-step → chunkwise change was the real win (≈9× CPU at bs=4/T=120: 1300 → 147 ms/step; the
+  board's bare-cell numbers were 8.4–22.3× CPU and 160× MPS fwd). Depth 8 → 3 is real and stays;
+  the payoff needs `torch.compile`/fusion, graph capture, or a bare cell at large T — untested.
+  Label: **more parallel, not yet faster**. See `POST_MORTEM.md` §1.1.
 - **Prior art existed in this repo the whole time**: `v0_model_try/parallel_scan.py`
   (untracked, mtime 13 Oct 09:00 — two days before the sequential v2 scan) already stated the
   affine composition rule and the doubling scan plan, with the note that it removes the loop

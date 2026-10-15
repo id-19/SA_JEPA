@@ -10,17 +10,20 @@
 
 | When | What | Evidence |
 |---|---|---|
+| **Oct 10–11** | The main progression board (`actual_docs/latest_plan.md`, item C7) already carries the derivation — "a block is the pair `(M,V)`; merge is `(M_R M_L, M_R V_L + V_R)`; with `h_0=0` the scan's V *is* `h_t`" — plus **measured** scan wins on the toy cell (d_input=80, complex64, 4-thread CPU): **8.4×** at (8,99,16), 15.2× at (8,235,16), **22.3×** at (4,1880,16); "MPS scan fwd 0.97 ms vs MPS loop 155.7 ms (160×) ⇒ MPS is worth using for the scan form". It ends: **"NEXT SESSION STARTS HERE: build δ / A_bar / u for all t at once, then log₂T doubling merge rounds."** | `actual_docs/latest_plan.md` |
 | **Oct 11 09:51 / 10:24** | The coaching skill already holds the whole solution: `sa-jepa-coaching/scripts/parallel_scan_ref.py` (runnable, verified reference implementation) and `references/parallel-scan.md` — which states the block pair `(M,V)`, the **exact same merge rule** `(M_R,V_R)∘(M_L,V_L) = (M_R·M_L, M_R·V_L + V_R)`, `ceil(log2(T))` doubling rounds, plus seven measured pitfalls (time axis is dim 1, clone both buffers, complex64 tolerance scales with T, "one block symbol appearing twice in a merged expression is always wrong"). | file mtimes `stat`; content |
 | **Oct 13 09:00** | Ishaan writes `v0_model_try/parallel_scan.py`: the affine recurrence, the **composition rule** `(M_R,V_R).(M_L,V_L) = (M_R·M_L, M_R·V_L + V_R)`, a doubling-scan plan with the index arithmetic, "Put everything on MPS, without a loop it's way faster", and the staging plan *v0 naive → v1 parallelise → v2 fuse output+state*. | file mtime `stat`; content; **untracked** (`git status` `??`) |
 | **Oct 15 11:26** | `f16e530` "replace per-step delta scan with chunkwise UT-transform scan" — the chunkwise scan that still loops `for c in range(NC)` in Python. A real improvement over the per-step loop, verified numerically against it. | `git log --format` |
 | Oct 15 11:45 / 12:11 | `09e0727` nproj dial; `8ac8718` isotropy dial + control evidence (slow-collapse diagnosis). | `git log` |
 | **Oct 15 ~14:30** | The sequential chunk loop is finally replaced by a log-depth Hillis–Steele prefix scan (`_chunk_scan_parallel`), verified ≤7.2e-07 vs the loop and the per-step definition. | `a1c6b90`, `_verify_parallel_scan.py` |
 
-**The rule needed on Oct 15 11:26 was already written down in three places, none of them
-consulted**: our own coaching skill (Oct 11, with a runnable verified script), Ishaan's scratch
-note in this repo (Oct 13), and the earlier "T-loop scan derivation" commit. `git log --all -S
-"M_R.V_L"` returns nothing before today, so the scratch note was never in git history — but the
-skill file was on disk the entire time, and the script was runnable.
+**The rule needed on Oct 15 11:26 was already written down in FOUR places, none of them
+consulted**: the main progression board (`actual_docs/latest_plan.md` C7 — with the derivation,
+the measured 8.4–22.3× CPU and 160× MPS wins, and the words *"NEXT SESSION STARTS HERE"*), our
+coaching skill (Oct 11, with a runnable verified script), Ishaan's scratch note in this repo
+(Oct 13), and the earlier "T-loop scan derivation" commit. `git log --all -S "M_R.V_L"` returns
+nothing before today, so the scratch note was never in git history — but the board and the skill
+file were both on disk the entire time, and the script was runnable.
 
 ### 1.1 The scan's payoff, MEASURED — and it is not what anyone claimed (not even me)
 `references/parallel-scan.md` pitfall 6 warns the scan's advantage depends on baseline and T, so
@@ -33,23 +36,35 @@ this needed an op-count profile, not another single-config timer. `_profile_scan
 | 250 | 155,232 | 182,574 | 0.289 → 0.291 (0.99×) | 0.980 → 0.919 (1.07×) |
 | 500 | — | 394,302 | 0.299 → 0.333 (**0.90×**) | 0.944 → 0.937 (1.01×) |
 
-Three things fall out, and the first one retracts a claim made earlier in this very document:
+**Read this against the two different baselines, or the numbers contradict the board needlessly:**
 
-1. **The parallel scan issues MORE ops, not fewer** (+12% at T=100, +18% at T=250). It reduces
+| change | baseline it replaces | measured effect |
+|---|---|---|
+| per-step loop → **chunkwise** scan (today 11:26, `f16e530`) | a Python loop over *T* | **the real win**: ≈9× on CPU (1300 → 147 ms/step at bs=4 T=120), and the 10–11 Oct board measured 8.4–22.3× CPU and **160× on MPS fwd** for the bare cell |
+| chunkwise loop → **log-depth prefix** scan (today ~14:30, `a1c6b90`) | a Python loop over *N_chunks* (4–8) | the table below: ≤7% MPS, ~0% CPU, −10% CPU at T=500 |
+
+The profile below compares **prefix-scan vs chunkwise**, because chunkwise is what shipped at 11:26.
+It does **not** re-litigate the per-step loop, which was genuinely 7× more sequential steps
+(64 + T/64 vs T) and whose removal is the win the board already measured. What it does refute is
+the *specific* mechanism claimed for the second change: "fewer sequential kernel launches is
+precisely what MPS is starved for."
+
+Three things fall out:
+
+1. **The prefix scan issues MORE ops, not fewer** (+12% at T=100, +18% at T=250). It reduces
    sequential *depth*; it does not reduce the number of ops handed to the device, because the
    scan performs log-depth work over every chunk with the same-shaped tensor ops. The dominant
    ops in both variants are `as_strided` / `select` / `resolve_conj` — pure view/aliasing
    metadata, i.e. the cost is per-frame indexing work, not loop structure.
-2. **Per-frame cost is flat in T for BOTH variants** (cpu 0.36 → 0.29 → 0.30 ms/frame). There was
-   never a per-chunk-loop penalty visible at this scale (N_chunks = 4–8) — the loop's serial
-   steps cost less than the per-frame elementwise work that dominates.
-3. **Therefore the scan is not a meaningful optimization at this scale**: ≤7% on MPS, ~0% on
-   CPU, and 10% *slower* on CPU at T=500. The premise "fewer sequential kernel launches is
-   precisely what MPS is starved for" is measurably false here: op count went up and wall-clock
-   did not move, because eager-mode async dispatch already overlaps launch overhead with CPU
-   run-ahead. Where depth genuinely pays is `torch.compile`/fusion, CUDA-graph capture, or T in
-   the thousands where Python-level loop overhead and sync points accumulate — all untested
-   here, and the honest label until then is **"more parallel, not yet faster"**.
+2. **Per-frame cost is flat in T for BOTH variants** (cpu 0.36 → 0.29 → 0.30 ms/frame). At
+   N_chunks = 4–8 the chunk loop's serial steps cost less than the per-frame elementwise work
+   that dominates.
+3. **So the second change is not a meaningful optimization at this scale**: ≤7% on MPS, ~0% on
+   CPU, and 10% *slower* on CPU at T=500. Eager-mode async dispatch already overlaps MPS launch
+   overhead with CPU run-ahead. Depth pays where the loop's serial steps are the binding cost —
+   a bare cell with T in the thousands (the board's 160× case) — or under `torch.compile`/fusion
+   and graph capture, which are untested here. Honest label until then: **"more parallel, not
+   yet faster"**.
 
 This is the third instance of the same lesson in this document: the sequential chunk loop was
 *correct and adequate*, and the real defect was that nobody had measured which resources were
@@ -60,11 +75,14 @@ actually binding.
 ### 2.1 Primary — prior art in the working tree was never searched for
 The task was treated as "derive it from the paper (arXiv:2406.06484, Eqs. 5–11)". It was
 derivable from the paper, so the derivation worked and nothing forced a look around. But the
-repo already contained a better formulation, one directory away.
+repo — and the plan doc this workflow reads every session, and the skill this workflow loads —
+already contained a better formulation, the composition rule verbatim, and *measurements of its
+speedup*, with the board even saying where to start.
 
 Process fix: before implementing any performance-critical kernel, search the **entire working
-tree including untracked scratch directories** for prior art and cite what was found in the
-commit message. `search_files` over `*.py` for the recurrence/scan keywords costs seconds.
+tree including untracked scratch directories** AND the two standing docs (the plan, the skill)
+for prior art and cite what was found in the commit message. `search_files` over `*.py` for the
+recurrence/scan keywords costs seconds; `grep` over `actual_docs/` costs the same.
 
 ### 2.2 Secondary — "numerically equal to the reference" was treated as "done"
 The verification asked *is it correct?* and never *is this the most parallel formulation
@@ -141,11 +159,17 @@ The sequential loop wasn't a knowledge gap about how to parallelise — the answ
 written down here. It was a *search* gap plus a *definition-of-done* gap: correctness against a
 reference was the only bar, so an implementation that was correct-but-serial passed everything.
 
-But the profile in §1.1 forces a second, less flattering conclusion: **the loop was also not the
-performance problem it was assumed to be.** Sequential depth 8 → 3 is real, verified, and buys
-≤7% wall-clock (and −10% on CPU at T=500), because per-frame cost is flat in T in both variants
-and the op count actually rises. The failure wasn't "we shipped something slow"; it was "we
-spent a day fixing a bottleneck nobody had measured, and told ourselves a story about it
-(`MPS is starved for launches`) that the measurement contradicts." The search rule and the
-depth-budget rule are worth keeping. The one that would have saved the most time is the
-cheapest: **measure which resource is binding before optimising it.**
+But the profile in §1.1 forces a second, more precise conclusion, and it cuts both ways:
+
+- **The per-step loop WAS the performance problem** — 7× more sequential steps than chunkwise,
+  ≈9× on CPU, and the board's own 10–11 Oct measurement of 160× on MPS forward. Killing it was
+  worth the day. The board had said so, in bold, in the place marked "start here".
+- **The prefix scan on top of the chunkwise scan was not** — ≤7% MPS, ~0% CPU, −10% at T=500,
+  with 12–18% *more* ops, because per-frame cost is flat in T in both variants and the binding
+  work is per-frame indexing (`as_strided`/`select`/`resolve_conj`).
+
+So the honest charge is not "we optimised the wrong thing" but "we never checked which of the two
+loops was binding, and we substituted a mechanism story (`MPS is starved for launches`) for a
+measurement — twice, once before and once after." The search rule and the depth-budget rule are
+worth keeping. The one that would have saved the most time is the cheapest: **read the board's
+open item before deriving it again, then measure which resource is binding before optimising it.**
