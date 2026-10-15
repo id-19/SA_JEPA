@@ -1,6 +1,6 @@
 # SA-CE v0 — SCAFFOLD for Ishaan's model: dataset + board plumbing ONLY.
 # The model class (hybrid delta-net layers, heads) is HIS file, HIS forward pass — nothing here trains anything.
-# Contract your model must satisfy (from actual_docs/sa_ce_v1_design.md):
+# Contract your model must satisfy (from v2_unfrozen/DESIGN_v0.md):
 #   input : (B, T, 1536) float32          — cached USM frame latents (6.5 fps)
 #   mask  : (B, T) bool                   — padding (truncated chunks pad at the END)
 #   output: predictions at delta in {1, 4, 18, 24} — shapes (B, T, 1536) each, valid-masked in the loss

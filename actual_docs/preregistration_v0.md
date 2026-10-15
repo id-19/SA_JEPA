@@ -14,7 +14,7 @@
 # 4. Order of floors at Δ=24 (circle): blind > memless > linear / linear > memless > blind
 #    — reason: ________ (hint: standardized latents change what "mean prediction" costs)
 #
-# FALSIFIERS already standing (sa_ce_v1_design.md §6):
+# Falsifiers already standing (v2_unfrozen/DESIGN_v0.md §8):
 #   A. ΔS24 ≤ 0 at step 3000  => frozen-latent space is not a learnable target (kill or rethink)
 #   B. 4D board ≤ single-horizon boards => the 4-horizon weighting is decoration
 #   C. delta-net ≤ matched-SSM arm => the hybrid engine loses its first head-to-head
