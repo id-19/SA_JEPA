@@ -51,9 +51,11 @@ def synth_music(n=N_MUSIC, dur_s=5.0, seed=0):
         perc = np.zeros_like(t)
         for beat in np.arange(0, dur_s, 60.0 / bpm):
             i0 = int(beat * SR)
+            if i0 >= len(t):
+                continue
             seg = np.exp(-np.arange(len(t) - i0) / (0.06 * SR))
             env[i0:] = np.maximum(env[i0:], seg)
-            L = int(0.02 * SR)
+            L = min(int(0.02 * SR), len(t) - i0)  # clip to the remaining samples: the last beat
             perc[i0:i0 + L] += rng.normal(0, 1, L) * np.exp(-np.arange(L) / (0.004 * SR))
         sig = 0.75 * sig * env + 0.25 * perc
         sig = sig / (np.abs(sig).max() + 1e-9) * 0.7
@@ -108,6 +110,16 @@ def main():
 
     # ---- 1a. speaker probe on frozen latents
     data = held_out_mels(Path(str(args.ckpt) + ".split.pt"), n_utts=args.n_utts)
+    # A speaker contributing exactly one window makes a stratified split impossible, and
+    # board.speaker_probe now RAISES rather than silently returning 0.0 (see POST_MORTEM.md
+    # §2.3). Drop those speakers here, out loud, instead of letting the probe crash.
+    from collections import Counter
+    _c = Counter(u.split("-")[0] for u, _ in data)
+    _drop = {s for s, n in _c.items() if n < 2}
+    if _drop:
+        data = [(u, m) for u, m in data if u.split("-")[0] not in _drop]
+        print(f"[probe] dropped {len(_drop)} speaker(s) with <2 held-out windows: {sorted(_drop)}",
+              flush=True)
     print(f"probe windows: {len(data)} held-out utterances", flush=True)
     mels = [m for _, m in data]
     Z = encode(model, mels)

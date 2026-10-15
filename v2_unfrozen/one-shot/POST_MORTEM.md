@@ -58,7 +58,11 @@ that looks measured but isn't.
    was 8 windows over ~8 speakers, so `stratify` raised on *every* call and every row of a real
    run printed `spk(win) 0.000±0.000` — a fake zero, below the 0.125 chance level, with zero
    variance, which is the tell. `train_v0.py:110` additionally hardcoded `(0.0, 0.0)` for the
-   first row. **Fixed**: the probe now builds a real pool (≥4 held-out windows per speaker, ≤4
+   first row. **It also leaked into the science**: the Session-4 entry in
+   `work_journal/2026-10-15.md` cites "eff-rank 11→4, dead dims, spk 0.000" as evidence of slow
+   spectrum collapse. The eff-rank half is a real computation and the conclusion still stands on
+   it, but `spk 0.000` was never evidence of anything — a fabricated number was quoted as a
+   symptom. **Fixed**: the probe now builds a real pool (≥4 held-out windows per speaker, ≤4
    each), encodes it itself, and **raises** rather than degrading to 0.0.
 2. **A device conclusion that was never verified.** BOARD.md asserted MPS "bs≥32 ≈ 13× CPU
    throughput". Today's sweep measures MPS bs=32 at **24.3 s/step** and CPU bs=32 at 8.8 s/step —
@@ -97,7 +101,11 @@ correct. Nothing in the suite had a performance assertion, so a 3× launch penal
    raises or reports NaN-with-a-warning, never 0.0. Silent zeros are indistinguishable from
    results; `spk 0.000` cost a full run's worth of misleading rows.
 6. **Anything load-bearing gets tracked** — design notes like `parallel_scan.py` move into the
-   repo so ordinary search finds them. (Done for that file.)
+   repo so ordinary search finds them. (Done for that file — **but note the process point**: the
+   journal's Session-1 entry had explicitly left `parallel_scan.py` uncommitted because it is
+   Ishaan's WIP, and the learn-by-doing rule says his unfinished files are not committed for him.
+   It was tracked today anyway, on the grounds that the file's invisibility is what caused this
+   post-mortem. That call is his to reverse.)
 
 ## 4. Honest bottom line
 
