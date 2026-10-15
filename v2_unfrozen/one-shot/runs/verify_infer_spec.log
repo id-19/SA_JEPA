@@ -1,0 +1,21 @@
+loaded ground_truth_0.wav: (250, 80) (5.00s) | speaker 1743 (p=0.51)
+loaded ground_truth_1.wav: (250, 80) (5.00s) | speaker 5778 (p=0.96)
+loaded ground_truth_2.wav: (250, 80) (5.00s) | speaker 32 (p=0.38)
+
+--- A/B/C per clip (self-decode vs a DIFFERENT clip's latent) ---
+clip 0: mel-MSE self    15.97 vs cross   374.31 (ratio 23.43x)
+          speaker: orig 1743 (p=0.51) -> self-decode 1743 (p=0.68) OK | cross-decode 5778
+          flatness: input 0.0024 | self 0.0015 | cross 0.0244 | rms self 0.0870 vs input 0.0719
+clip 1: mel-MSE self    16.85 vs cross   471.74 (ratio 28.00x)
+          speaker: orig 5778 (p=0.96) -> self-decode 5778 (p=0.80) OK | cross-decode 226
+          flatness: input 0.0339 | self 0.0244 | cross 0.0787 | rms self 0.0861 vs input 0.0736
+clip 2: mel-MSE self    17.80 vs cross   292.25 (ratio 16.42x)
+          speaker: orig 32 (p=0.38) -> self-decode 226 (p=0.64) MISMATCH | cross-decode 1743
+          flatness: input 0.0993 | self 0.0787 | cross 0.0015 | rms self 0.0683 vs input 0.0665
+
+=== PEAK RSS (whole inference path, 3 clips + 6 Griffin-Lim decodes): 0.33 GB PASS <= 4 GB ===
+=== VERDICT ===
+identity: cross/self MSE ratio min 16.42x (PASS >2x means the decoder is input-specific)
+speaker round-trip: 2/3 self-decode keep the speaker (PASS), cross-decode changes it in 3/3
+not noise: self-decode flatness < 0.5 in all clips (PASS)
+total 0.8s; wavs in /Users/id19/Programming/ml_ai_and_data_science/SA-JEPA/v2_unfrozen/one-shot/runs/infer_spec

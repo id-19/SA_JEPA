@@ -259,6 +259,17 @@ parallel scan). Sequential depth goes from `T/64` to `log₂(T/64)`; for a 5 s w
 4 sequential steps → 2. This matters most on MPS, where each sequential launch costs fixed
 overhead.
 
+**Measured verdict (15 Oct, 16:15 clean re-run — this is the part that matters, and it is weaker than the argument
+above suggests).** Verified against the per-step reference three independent ways (≤ 7.2e-07) and
+the depth claim holds (8 → 3 at T = 500). But wall-clock: **≤ 7% on MPS, ≈ 0% on CPU, and −10% at
+T = 500**, because per-frame cost is *flat in T in both* variants — the step is dominated by
+memory-bound elementwise kernels and the SIGREG projections, not by chunk-loop launches. Op count
+actually **rises** (78 830 → 88 328 at T = 100, +12%), since the scan trades few big steps for many
+small views (`as_strided`/`select`/`resolve_conj`). So the honest label is **"more parallel, not
+yet faster"**: depth is real and pays where serial steps are the binding cost (a bare cell at large
+T, under `torch.compile`/graph capture) — which is untested here. Keep it; do not claim a speedup.
+Full numbers: `POST_MORTEM.md` §1.1, `references/perf-and-measurement-discipline.md`.
+
 ---
 
 ## 10. Evidence that it works (what "actually works" means here)
@@ -281,12 +292,58 @@ locally with macOS `say`, since the design contains no text tokenizer — audio 
 input modality) and it returns: probe tags, nearest-neighbour training utterance, speaker
 guess with confidence, and a playable reconstruction.
 
+### 10.1 The numbers, as measured (v0, `runs/v0`, 26 MB total)
+
+| probe | result | floor / ceiling |
+|---|---|---|
+| Held-out reconstruction | 764 → **17.1 dB²** (mel) | — |
+| Effective rank of latents | 8.6 → **20.8** (no collapse) | 256 max |
+| Speaker ID, linear probe on FROZEN latents (38 classes, n = 599) | **0.991 ± 0.003** | blind 0.040; USM reference 0.9996 |
+| Speech vs music (music = synthetic, labelled) | **1.000** | 0.500 |
+| Decoder autoencode (mel corr) | **0.964** | Griffin–Lim pipeline ceiling 0.997 |
+| Decoder on frozen latents (beats joint training) | **0.971** | — |
+| 1 s-ahead prediction | **FAILS** — corr 0.44, 268 dB², flat | > 0.9 |
+
+### 10.2 "Not gibberish", tested directly (`_verify_infer_spec.py`, `runs/verify_infer_spec.log`)
+
+Round-tripping three *different* speakers through the full user path (clip → latents → decoded
+wav → re-encoded → probe):
+
+* **Identity vs mismatch.** Decoding clip A's latent fits A **16.4–28.0×** better (mel-MSE) than
+  decoding clip B's does. A decoder that emitted generic "speech" would score ≈ 1×.
+* **Speaker survives the loudspeaker.** 2/3 self-decodes still classify as the same speaker
+  (the third was already an unsure reading, p = 0.38); cross-decodes change the speaker in 3/3.
+* **It is sound, not noise.** Spectral flatness 0.0015–0.079 (white noise ≈ 1.0), RMS within 20%
+  of the input.
+* **Budget.** Peak RSS for the whole path, 3 clips + 6 Griffin–Lim decodes: **0.33 GB** (limit 4 GB),
+  0.8 s.
+
+Text path (`infer.py --text "…"`, `runs/verify_text_out.log`): decoded mel tracks the true TTS
+audio at **corr 0.964** against a 0.997 pipeline ceiling, SNR 8.44 vs 9.73 dB — i.e. **most of the
+remaining error is the Griffin–Lim vocoder, not the latents**. Tag came back `speech-like
+(p_music=0.00)`, nearest training utterance cosine 0.676.
+
+bf16 (`_verify_bf16_mps.py`, `runs/verify_bf16_mps.log`): runs on MPS, **1.0015× the fp32
+reconstruction MSE, max deviation 0.38 dB, no NaN**; MPS fp32 is bit-identical to CPU fp32. bf16 is
+therefore supported and numerically safe — it just buys no speed on this machine, so fp32 on CPU
+stays the training default.
+
 ---
 
 ## 11. Known limits (stated plainly)
 
 * 13.7 h of speech, one corpus, 38 speakers — small. Probes are evidence of *learned structure*,
   not benchmark-grade accuracy.
-* The decoder is a demonstration path, not a vocoder; expect robotic Griffin–Lim audio.
-* The isotropy constant is under-tuned (λ = 1 holds eff-rank ≈ 7.5 where λ = 4 is next).
+* The decoder is a demonstration path, not a vocoder; expect robotic Griffin–Lim audio. This, not
+  the latents, is the current quality ceiling: the pipeline's own best is corr 0.997 against 0.964
+  for the model's decode.
+* **The predictor does not work yet.** 1 s-ahead is corr 0.44 — the model reconstructs and
+  characterises audio well but does not yet predict its future. It emits *structured* audio that is
+  the wrong content, so beware of judging it by ear or by flatness alone; the honest measures are
+  mel-MSE/corr against the true future.
+* Isotropy λ = 1 now holds eff-rank **20.8** at full scale (it was ≈ 7.5 in the small runs where
+  λ = 4 looked like the next step) — the earlier note that the constant was under-tuned is obsolete
+  for v0; λ remains worth sweeping, not fixing.
+* MPS is *not* the fast path on this machine: at bs = 8 CPU fp32 is 2.8× MPS on throughput, and bf16
+  (though verified numerically equivalent) buys no speed. GPU/MPS is a portability option, not a win.
 * No text modality: adding one is a separate contrastive rung, not a switch to flip.

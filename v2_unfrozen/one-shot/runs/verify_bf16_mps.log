@@ -1,0 +1,7 @@
+clip ground_truth_1.wav: (250, 80), 5.00s
+
+[fp32 CPU]      recon mel-MSE 16.85
+[mps fp32]  recon mel-MSE    16.85 (1.0000x fp32 CPU) | max|Δ| vs fp32  0.000 dB | NaN False | 0.77s
+[mps bf16]  recon mel-MSE    16.87 (1.0015x fp32 CPU) | max|Δ| vs fp32  0.380 dB | NaN False | 0.21s
+
+VERDICT: bf16 runs on MPS and is numerically equivalent to fp32 (parity) -> it is a supported option, not the default, because it buys no speed here; fp32 CPU remains the operating point for training, MPS (either dtype) for a GPU-ish run.

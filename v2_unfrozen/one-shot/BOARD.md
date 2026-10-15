@@ -57,8 +57,8 @@
   candidate M-forms, all fail; error-correcting writes make transitions state-dependent
   (unlike linear attention). Gated DeltaNet's chunk form = separate follow-up with real math.
 - Speed: CPU bs=4 T=120 **147 ms/step (was ~1300)**.
-- **Device sweep, bs 8/16/32, T=250, fp32 + bf16 — MEASURED TWICE, and the first pass was
-  contaminated (16 Oct re-verify):**
+- **Device sweep, bs 8/16/32, T=250, fp32 + bf16 — MEASURED TWICE ON 15 OCT: pass 1 at 14:45 was
+  contaminated, pass 2 at 16:15 clean (nothing else running).**
 
   | config | pass 1, `14:45` (contended) | pass 2, clean re-run | backing |
   |---|---|---|---|

@@ -1,0 +1,13 @@
+file                          dur s     rms  flatness  verdict
+text_input.wav                 2.50  0.1231    0.0031  structured
+input_reference.wav            2.50  0.0852    0.0062  structured
+decoded_input.wav              2.50  0.0956    0.0067  structured
+decoded_from_pred_0.2s.wav     2.30  0.0268    0.0165  structured
+decoded_from_pred_1s.wav       1.50  0.0134    0.0293  structured
+
+true mel vs GL-rendered mel  corr 0.997 | SNR   9.73 dB
+true mel vs MODEL decode     corr 0.964 | SNR   8.44 dB
+
+VERDICT: model decode tracks the true audio at corr 0.964 (the GL pipeline's own ceiling is 0.997) -> PASS: not gibberish
+Note: decoded_from_pred_* is the model's 1 s-ahead IMAGINATION. It is NOT noise -- its flatness (0.03) is as structured as real audio; it is structured-but-WRONG, which is why flatness cannot be the only check. The content test is the mel-MSE / corr against the
+      true future, where it fails (corr 0.44). That is the known-broken predictor rung, not the reconstruction path.
