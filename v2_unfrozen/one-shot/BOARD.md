@@ -22,6 +22,24 @@
 
 `step | L_pred d1 d10 d50 d150 | sigreg | eff-rank | var[min,mean,max] | spk | floors bar`
 
+### Gate 1 (overfit-one-batch, chunkwise core, first entry)
+
+- 2026-10-15: PASS, final loss **0.02026** (bar 0.05), 120 iters / 19 s CPU (147 ms/step at bs=4 T=120).
+- α=0.1 failed this gate (loss stuck 0.124, per-d losses re-rising in sync with sigreg pressure):
+  sigreg variance-pressure fights memorization on padded windows. α=0.01 + warmup → PASS.
+  Keep α=0.01 for gate 2/4; revisit at scale for gate 3 (collapse demo needs real α).
+
+## Chunkwise scan (in place of per-step loop)
+
+- Core: canonical decay-free DeltaNet `S_t = S_{t-1}(I − β_t k_t k_tᵀ) + β_t v_t k_tᵀ`, chunkwise
+  UT-transform (Yang et al. 2406.06484 Eqs. 5–11). Loop trips: T → 64 + T/64, carries batched
+  over B·H. Verified vs per-step ref: outputs AND states < 1e-5 (read-after-update, diag-incl).
+- **Closed-form chunk inverse does NOT exist for decayed (a<1) delta rule** — verified three
+  candidate M-forms, all fail; error-correcting writes make transitions state-dependent
+  (unlike linear attention). Gated DeltaNet's chunk form = separate follow-up with real math.
+- Speed: CPU bs=4 T=120 **147 ms/step (was ~1300)**. MPS still launch-bound at small batch
+  (496 ms — use CPU for toy gates, MPS only at bs≥32 where 3.5 s/step ≈ 13× CPU throughput).
+
 ## Run gates (from DESIGN_v0 §5)
 
 1. overfit-one-batch → loss → ~0
