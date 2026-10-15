@@ -1,8 +1,7 @@
 # SA-JEPA v2 one-shot — build the 10 h mel cache from LibriSpeech train-clean-100.
-# Source: HF parquet mirror (refs/convert/parquet), already downloaded to /tmp by curl.
-# Output: v2_unfrozen/one-shot/mel_cache/<utt>.pt  (memmap-able float16 mel, 80 x T, 50 fps)
-#         + manifest.csv (utt, dur, speaker) + windows.csv (utt, t0_frame, n_frames=500)
-# Disk discipline: 10h of fp16 mel ≈ 275 MB — fits current free space; flac/parquet never replicated.
+# Source: HF parquet mirror (refs/convert/parquet), downloaded to /tmp by curl (probe_url.sh).
+# NOTE: each parquet shard ≈ 6-7 h of audio; run once per shard (append-safe: manifest/windows
+# append, meta aggregates, existing .pt files skipped). 0000 → 6.70 h, 0001 topped up to 13.70 h total.
 import csv
 import io
 import json
@@ -48,8 +47,8 @@ def main():
     wins_w = csv.writer(wins)
     if not appending:
         wins_w.writerow(["utt", "t0", "n_frames"])
-    meta_f = open(CACHE / "acquisition_meta.json", "w")
-
+    # acquisition_meta.json is NOT opened here — the post-loop aggregation reads the PRIOR
+    # meta, so opening (and truncating) it early would destroy the stats it needs to read.
     total_s, n_utts, n_wins = 0.0, 0, 0
     speakers = set()
     done = False
