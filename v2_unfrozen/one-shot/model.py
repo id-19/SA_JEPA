@@ -251,11 +251,17 @@ class Predictor(nn.Module):
         return [head(x) for head in self.heads]
 
 
-def sigreg(z, n_proj=512, n_sample=4096):
+def sigreg(z, n_proj=512, n_sample=4096, isotropy=0.0):
     """Gaussian regularizer: per random unit direction u, push the batch distribution of u.z
     toward N(0,1): first moment (mean^2 -> 0) and variance (-> 1).
     R = mean_u[ mean_z(u.z)^2 + (var_z(u.z) - 1)^2 ]
-    (First-order, both-moments form of UniJEPA Eq.3; collapse of ANY direction is penalized.)"""
+    (First-order, both-moments form of UniJEPA Eq.3; collapse of ANY direction is penalized.)
+
+    isotropy (default 0 = original objective): adds lambda * Var_u[var(u.z)] — penalizes
+    variance CONCENTRATION across directions (a few fat dims + dead dims satisfies the mean
+    variance term but kills effective rank; observed: eff-rank 11 -> 6 -> 4 over 300-1200
+    steps at alpha=1.0 with per-dim var mean ~0.8 while the spectrum concentrated).
+    Isotropy term = 0 iff all directions share the same projection variance (isotropic)."""
     B, T, Dd = z.shape
     flat = z.reshape(-1, Dd)
     idx = torch.randperm(flat.shape[0], device=z.device)[: min(n_sample, flat.shape[0])]
@@ -265,7 +271,10 @@ def sigreg(z, n_proj=512, n_sample=4096):
     p = zs @ u.T  # (n, n_proj)
     mean = p.mean(0)
     var = p.var(0, unbiased=False)
-    return (mean ** 2).mean() + ((var - 1.0) ** 2).mean()
+    r = (mean ** 2).mean() + ((var - 1.0) ** 2).mean()
+    if isotropy > 0:
+        r = r + isotropy * var.var(0, unbiased=False).pow(2)
+    return r
 
 
 class SAJePAV0(nn.Module):
@@ -276,6 +285,9 @@ class SAJePAV0(nn.Module):
         # sigreg fidelity/speed dial: 512 default (paper-grade); lower = noisier estimator.
         # ESTIMATE NOISE AVERAGES OVER STEPS (regularizer), so gate-4-scale runs use 128.
         self.sigreg_nproj = 512
+        # isotropy dial: extra term penalizing projection-variance concentration (fat-dim
+        # collapse the base 2-moment term tolerates). 0.0 = original objective.
+        self.sigreg_isotropy = 0.0
 
     def forward(self, mels):
         e = self.encoder(mels)  # (B, T, D)
@@ -297,7 +309,7 @@ class SAJePAV0(nn.Module):
             mse = F.mse_loss(pred, tgt)
             l_terms[d] = mse
             total = total + w * mse
-        r = sigreg(e, n_proj=self.sigreg_nproj)
+        r = sigreg(e, n_proj=self.sigreg_nproj, isotropy=self.sigreg_isotropy)
         return total / len(HORIZONS) + alpha * r, {**{f"d{k}": v for k, v in l_terms.items()}, "sigreg": r}, e
 
 
