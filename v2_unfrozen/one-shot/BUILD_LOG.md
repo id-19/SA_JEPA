@@ -299,6 +299,7 @@ guess with confidence, and a playable reconstruction.
 | Held-out reconstruction | 764 → **17.1 dB²** (mel) | — |
 | Effective rank of latents | 8.6 → **20.8** in-run; held-out **21.9** per frame, but **6.7 after utterance pooling** | 256 max |
 | Speaker ID, linear probe on FROZEN latents (37 classes, n = 599) | **0.991 ± 0.003** | blind 0.040; USM reference 0.9996 |
+| Speaker ID, window probe on the trained encoder (148 windows / 37 speakers, the training-log protocol) | **0.970 ± 0.010** | chance 0.027 |
 | Speech vs music (music = synthetic, labelled) | **1.000** | 0.500 |
 | Decoder autoencode (mel corr) | **0.964** (19.45 dB²) | Griffin–Lim pipeline ceiling 0.997 |
 | Decoder on frozen latents (fresh decoder, 1200 steps, 400 windows) | **corr 0.971** (15.86 dB²) — *better* than the jointly-trained one | joint: 0.964 |

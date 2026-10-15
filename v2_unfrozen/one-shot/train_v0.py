@@ -85,7 +85,8 @@ def main():
 
     # fixed held-out eval batch (never trained on): used for every printed row
     xev, mev = sample_batch(probe_rows, a.bs, a.T, np.random.default_rng(1234), a.device)
-    yev = [m[0].split("-")[0] for m in mev]
+    yev = [m[0].split("-")[0] for m in mev]  # mev elements are TUPLES: m[0] is the metadata field
+    # (do NOT "simplify" this to m.split(...) -- that was tried and broke on AttributeError)
 
     # Speaker probe pool: bs=8 eval windows give 8 windows / ~8 speakers, so a stratified
     # split is impossible and the old _quick_probe silently returned 0.0 on ValueError --
@@ -104,7 +105,10 @@ def main():
         xp[bi] = torch.load(HERE / "mel_cache" / f"{r['utt']}.pt").float()[:a.T]
     xp = xp.to(a.device)
     mp = [r["utt"] for r in pool_rows]
-    yp = [m[0].split("-")[0] for m in mp]
+    yp = [m.split("-")[0] for m in mp]  # NB: m is a STRING -- m[0] was its first CHARACTER, which
+    # labelled the probe with ~8 digits instead of 37 speakers. It still printed a plausible
+    # 0.7-0.8 (utterance-id digits correlate with speaker ranges), i.e. a metric that measured
+    # "predict the first digit of the utterance id" while being labelled spk(win).
     print(f"probe pool: {len(yp)} windows over {len(set(yp))} speakers "
           f"(min {min(list(yp).count(s) for s in set(yp))} windows/speaker)", flush=True)
 

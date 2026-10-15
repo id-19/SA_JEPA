@@ -107,6 +107,21 @@ that looks measured but isn't.
    it, but `spk 0.000` was never evidence of anything — a fabricated number was quoted as a
    symptom. **Fixed**: the probe now builds a real pool (≥4 held-out windows per speaker, ≤4
    each), encodes it itself, and **raises** rather than degrading to 0.0.
+   **Then the fix itself was still wrong, in a way that printed a believable number.** The 15:21
+   training log kept showing `spk(win) 0.000±0.000` because that job started ~14:53 and the probe
+   fix landed at 14:58 — five minutes *into* the run, so the old code was already loaded in memory.
+   Re-measuring with the fixed code exposed a second defect: `train_v0.py:107` built the labels from
+   `m[0].split("-")[0]` where `m` is a *string*, so `m[0]` is its first **character** — the probe was
+   classifying ~8 utterance-id digits (it reported "148 windows over **8** speakers") while being
+   labelled speaker ID, and it printed a plausible `0.719`. A fabricated *plausible* number is worse
+   than a fabricated zero: 0.000 sits below chance and invites a look, 0.719 does not. (The
+   identical-looking `m[0]` at :88 is correct — `mev` elements are *tuples*; "simplifying" it raises
+   `AttributeError`, which is how that was caught.) **Fixed and re-measured**: the pool reports
+   148 windows over the true **37** speakers, and the same quantity reads **spk(win) 0.970±0.010** on
+   the shipped checkpoint (0.941±0.010 at step 25 of a fresh run). The published `0.000` is below
+   even the true 37-class chance level of 0.027. Evidence: `runs/check_train_probe.log`,
+   `runs/_probecheck.log`. The 15:21 log is left untouched — it is evidence of a defect, not a
+   record to be edited — and its `spk(win)` column is not citable.
 2. **A device conclusion that was never verified — and the replacement number was itself
    contaminated.** BOARD.md asserted MPS "bs≥32 ≈ 13× CPU throughput"; the old note was wrong in
    both directions. But its replacement, "MPS bs=32 thrashes: 24.3 s/step, 0.3 kframe/s, swap →
@@ -172,6 +187,17 @@ refuted. Nothing in the suite had a performance assertion, so nobody could tell 
 5. **No metric may return a fabricated default on an error path** — a probe that cannot run
    raises or reports NaN-with-a-warning, never 0.0. Silent zeros are indistinguishable from
    results; `spk 0.000` cost a full run's worth of misleading rows.
+   **Corollary, learned the hard way an hour later: a metric can also be *mislabelled* rather than
+   absent.** The repaired probe then reported `spk(win) 0.719` for a classifier that was actually
+   predicting the first digit of the utterance ID. Both the fake zero and the wrong-label 0.719
+   were printed under the same column name, and the second was *harder* to catch because it looked
+   healthy. So: when a metric is load-bearing, verify what it is *computing* — print the class
+   count it found and the chance level next to it. `148 windows over 8 speakers` in a pool that
+   cannot have fewer than 37 is the kind of internal contradiction that makes a wrong number
+   visible; that check now happens automatically on every run.
+   **And the same skepticism applies to a fix**: "simplifying" the neighbouring `m[0]` (correct,
+   because those elements are tuples) broke a working line. The guard is to re-run and read the
+   output, not to reason that the two look alike — which is also how the real bug was found.
 6. **Anything load-bearing gets tracked** — design notes like `parallel_scan.py` move into the
    repo so ordinary search finds them. (Done for that file — **but note the process point**: the
    journal's Session-1 entry had explicitly left `parallel_scan.py` uncommitted because it is
