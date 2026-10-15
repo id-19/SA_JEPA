@@ -34,8 +34,16 @@ def speaker_probe(Z: torch.Tensor, y, n_seeds: int = 3, test_size: float = 0.3):
     for seed in range(n_seeds):
         try:
             Xtr, Xev, ytr, yev = train_test_split(X, y, test_size=test_size, random_state=seed, stratify=y)
-        except ValueError:
-            return 0.0, 0.0  # too few classes/samples per class to stratify
+        except ValueError as e:
+            # Do NOT return 0.0 here. A silent 0.0 is indistinguishable from a measured zero
+            # and was printed as "spk 0.000" on every row of a real 2000-step run whose probe
+            # pool was 8 windows over ~8 speakers -- a metric that measured nothing while
+            # looking like a result. Fail loudly instead; the caller must supply a pool with
+            # >=2 windows per speaker.
+            raise RuntimeError(
+                f"speaker_probe cannot stratify: {len(y)} windows over {len(set(y.tolist()))} "
+                f"speakers (needs >=2 per speaker). Build a proper probe pool."
+            ) from e
         mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-8
         clf = LogisticRegression(max_iter=2000)
         clf.fit((Xtr - mu) / sd, ytr)

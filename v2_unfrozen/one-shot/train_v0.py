@@ -87,6 +87,27 @@ def main():
     xev, mev = sample_batch(probe_rows, a.bs, a.T, np.random.default_rng(1234), a.device)
     yev = [m[0].split("-")[0] for m in mev]
 
+    # Speaker probe pool: bs=8 eval windows give 8 windows / ~8 speakers, so a stratified
+    # split is impossible and the old _quick_probe silently returned 0.0 on ValueError --
+    # i.e. the printed spk(win) column measured NOTHING. Build a real pool here: keep only
+    # speakers with >=4 held-out windows and take <=4 windows each, so every speaker appears
+    # in both sides of a stratified split. Failures must be loud (see _quick_probe).
+    by_spk: dict[str, list] = {}
+    for r in probe_rows:
+        by_spk.setdefault(r["utt"].split("-")[0], []).append(r)
+    pool_rows = []
+    for spk in sorted(by_spk):
+        if len(by_spk[spk]) >= 4:
+            pool_rows.extend(by_spk[spk][:4])
+    xp = torch.zeros(len(pool_rows), a.T, 80)
+    for bi, r in enumerate(pool_rows):  # deterministic first window per utt (no duplicates)
+        xp[bi] = torch.load(HERE / "mel_cache" / f"{r['utt']}.pt").float()[:a.T]
+    xp = xp.to(a.device)
+    mp = [r["utt"] for r in pool_rows]
+    yp = [m[0].split("-")[0] for m in mp]
+    print(f"probe pool: {len(yp)} windows over {len(set(yp))} speakers "
+          f"(min {min(list(yp).count(s) for s in set(yp))} windows/speaker)", flush=True)
+
     t0 = time.time()
     t_last = t0
     for it in range(a.steps + 1):
@@ -107,7 +128,7 @@ def main():
                 zf = e_ev.reshape(-1, e_ev.shape[-1])
                 vmean, vmin, vmax = per_dim_var(zf)
                 er = effective_rank(zf)
-                acc, sd = _quick_probe(pooled, yev) if it >= a.eval_every else (0.0, 0.0)
+                acc, sd = _quick_probe(model, xp, yp, a.device) if it >= a.eval_every else (float("nan"), float("nan"))
                 print(f"step {it:>5} | held-out recon MSE {rec_mse:7.3f} dB² | eff-rank {er:5.1f} | "
                       f"var[{vmin:.2f},{vmean:.2f},{vmax:.2f}] | spk(win) {acc:.3f}±{sd:.3f} | "
                       f"{time.time()-t0:.0f}s", flush=True)
@@ -131,23 +152,33 @@ def main():
     print(f"saved ckpt prefix {a.out} (+ .split.pt)")
 
 
-def _quick_probe(Z, y, seeds=2, test_size=0.3):
-    """Small logistic-regression speaker probe (few classes at bs=8 -> low support;
-    the full probe lives in evidence_v0.py on many more windows)."""
+def _quick_probe(model, xp, yp, device, seeds=3, test_size=0.3):
+    """Speaker probe on the fixed held-out pool (several windows per speaker, disjoint
+    utterances, never trained on). Encodes the pool itself so the caller cannot accidentally
+    hand it an 8-window eval batch.
+
+    FAILS LOUDLY: the previous version returned (0.0, 0.0) whenever the stratified split
+    raised -- which it did on every single call, because the pool was 8 windows over ~8
+    speakers. A metric that silently reports 0.0 is worse than no metric: it looked like a
+    measured zero for the entire run. Any inability to measure now raises.
+    """
     from sklearn.linear_model import LogisticRegression
     from sklearn.model_selection import train_test_split
+    if len(set(yp)) < 2:
+        raise RuntimeError(f"speaker probe needs >=2 speakers in the pool, got {len(set(yp))}")
+    counts = {s: list(yp).count(s) for s in set(yp)}
+    if min(counts.values()) < 2:
+        raise RuntimeError(f"speaker probe needs >=2 windows per speaker; got {counts}")
+    with torch.no_grad():
+        Z = model.encoder(xp).mean(1)
     X = Z.detach().cpu().numpy()
-    yy = np.asarray(y)
+    yy = np.asarray(yp)
     accs = []
     for s in range(seeds):
-        if len(set(yy)) < 2:
-            return 0.0, 0.0
-        try:
-            Xtr, Xev, ytr, yev = train_test_split(X, yy, test_size=test_size, random_state=s, stratify=yy)
-        except ValueError:
-            return 0.0, 0.0
+        Xtr, Xev, ytr, yev = train_test_split(X, yy, test_size=test_size, random_state=s,
+                                              stratify=yy)
         mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-8
-        clf = LogisticRegression(max_iter=1000)
+        clf = LogisticRegression(max_iter=2000)
         clf.fit((Xtr - mu) / sd, ytr)
         accs.append(clf.score((Xev - mu) / sd, yev))
     return float(np.mean(accs)), float(np.std(accs))
