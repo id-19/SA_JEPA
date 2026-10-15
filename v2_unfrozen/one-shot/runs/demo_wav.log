@@ -1,0 +1,15 @@
+input: v2_unfrozen/one-shot/runs/evidence/ground_truth_0.wav
+mel: (250, 80) (5.00s @50fps) | loading+mel in 0.2s
+
+[tag] speech-like (p_music=0.00)   [probe on frozen latents]
+[speaker] 1743: 51.3% | 1088: 19.8% | 403: 8.4%   (38 enrolled speakers; top-1 margin 0.31)
+[nearest] 1088-129236-0027 (speaker 1088), cosine 0.868  [best of 600 reference utterances]
+
+[decoder] input autoencode mel-MSE 15.97 dB² | 1s-ahead latent-MSE 0.6918 | 1s-ahead mel-MSE 226.84 dB²
+
+wrote:
+  /Users/id19/Programming/ml_ai_and_data_science/SA-JEPA/v2_unfrozen/one-shot/runs/infer/decoded_input.wav
+  /Users/id19/Programming/ml_ai_and_data_science/SA-JEPA/v2_unfrozen/one-shot/runs/infer/decoded_from_pred_0.2s.wav
+  /Users/id19/Programming/ml_ai_and_data_science/SA-JEPA/v2_unfrozen/one-shot/runs/infer/decoded_from_pred_1s.wav
+  /Users/id19/Programming/ml_ai_and_data_science/SA-JEPA/v2_unfrozen/one-shot/runs/infer/input_reference.wav
+total 0.6s

@@ -1,0 +1,15 @@
+input: text -> TTS (text_input.wav)  [no text tokenizer in this architecture: text is routed through speech, and the model only ever sees audio]
+mel: (145, 80) (2.90s @50fps) | loading+mel in 4.0s
+
+[tag] speech-like (p_music=0.00)   [probe on frozen latents]
+[speaker] 1743: 59.4% | 403: 27.0% | 3112: 3.5%   (38 enrolled speakers; top-1 margin 0.32)
+[nearest] 4362-15663-0078 (speaker 4362), cosine 0.591  [best of 600 reference utterances]
+
+[decoder] input autoencode mel-MSE 21.33 dB² | 1s-ahead latent-MSE 0.7499 | 1s-ahead mel-MSE 239.05 dB²
+
+wrote:
+  v2_unfrozen/one-shot/runs/infer_text/decoded_input.wav
+  v2_unfrozen/one-shot/runs/infer_text/decoded_from_pred_0.2s.wav
+  v2_unfrozen/one-shot/runs/infer_text/decoded_from_pred_1s.wav
+  v2_unfrozen/one-shot/runs/infer_text/input_reference.wav
+total 4.2s
