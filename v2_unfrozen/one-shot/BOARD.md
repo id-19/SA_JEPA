@@ -29,6 +29,22 @@
   sigreg variance-pressure fights memorization on padded windows. α=0.01 + warmup → PASS.
   Keep α=0.01 for gate 2/4; revisit at scale for gate 3 (collapse demo needs real α).
 
+### Gate rows (chunkwise core, real mel windows)
+
+- **Gate 2 PASS** — bit-identical step-0 losses on reseed.
+- **Gate 1 PASS** at α=0.01 (0.0201 < 0.05 bar, real mel batch, CPU 147 ms/step at bs=4/T=120).
+  α=0.1 FAIL confirmed again on real windows (0.143, sigreg fights memorization).
+- **Gate 3 PASS** after re-measure fix: dial now reads per-frame z (time-pooled means hid it).
+  α=0: var craters to 0.00. α=1.0: var mean ~0.9 held, eff-rank ~13.
+- **Gate 4 (T=250, bs=8, α=0.01): FAIL — full collapse.** Per-frame var → 0, trivial loss 1e-4,
+  spk probe 0.000. α=0.01 has no anti-collapse power at scale; fine only for gate-1 memorization.
+- **Gate 4 (α=1.0, base sigreg): slow spectrum collapse.** Estimator satisfied (sigreg ~0.21,
+  per-dim var mean ~0.8) while eff-rank 10.9 → 6.0 (step 300) → 4-5 (step 1200), var[min] → 0,
+  spk 0.000. Two-moment mean-variance per random direction cannot see fat-dim concentration.
+- **Isotropy fix (iso=1.0, α=1.0, 600 steps): directionally right.** eff-rank floors ~7.5
+  (baseline: keeps decaying), var[min] held 0.12-0.18, window-identity probe 0.987.
+  Pre-registered ≥15 NOT met — magnitude insufficient. Next: iso=4.0 arm, kurtosis term.
+
 ## Chunkwise scan (in place of per-step loop)
 
 - Core: canonical decay-free DeltaNet `S_t = S_{t-1}(I − β_t k_t k_tᵀ) + β_t v_t k_tᵀ`, chunkwise
