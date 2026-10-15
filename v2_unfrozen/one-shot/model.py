@@ -273,6 +273,9 @@ class SAJePAV0(nn.Module):
         super().__init__()
         self.encoder = Encoder()
         self.predictor = Predictor()
+        # sigreg fidelity/speed dial: 512 default (paper-grade); lower = noisier estimator.
+        # ESTIMATE NOISE AVERAGES OVER STEPS (regularizer), so gate-4-scale runs use 128.
+        self.sigreg_nproj = 512
 
     def forward(self, mels):
         e = self.encoder(mels)  # (B, T, D)
@@ -294,7 +297,7 @@ class SAJePAV0(nn.Module):
             mse = F.mse_loss(pred, tgt)
             l_terms[d] = mse
             total = total + w * mse
-        r = sigreg(e)
+        r = sigreg(e, n_proj=self.sigreg_nproj)
         return total / len(HORIZONS) + alpha * r, {**{f"d{k}": v for k, v in l_terms.items()}, "sigreg": r}, e
 
 
