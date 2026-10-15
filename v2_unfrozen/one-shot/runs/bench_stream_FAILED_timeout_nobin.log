@@ -1,0 +1,19 @@
+=== cpu 8 0 ===
+cpu 8 0: TIMEOUT/FAIL after 100s
+=== cpu 16 0 ===
+cpu 16 0: TIMEOUT/FAIL after 100s
+=== cpu 32 0 ===
+cpu 32 0: TIMEOUT/FAIL after 100s
+=== mps 8 0 ===
+mps 8 0: TIMEOUT/FAIL after 100s
+=== mps 16 0 ===
+mps 16 0: TIMEOUT/FAIL after 100s
+=== mps 32 0 ===
+mps 32 0: TIMEOUT/FAIL after 100s
+=== mps 8 1 ===
+mps 8 1: TIMEOUT/FAIL after 100s
+=== mps 16 1 ===
+mps 16 1: TIMEOUT/FAIL after 100s
+=== mps 32 1 ===
+mps 32 1: TIMEOUT/FAIL after 100s
+DONE

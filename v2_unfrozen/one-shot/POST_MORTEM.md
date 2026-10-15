@@ -107,14 +107,34 @@ that looks measured but isn't.
    it, but `spk 0.000` was never evidence of anything — a fabricated number was quoted as a
    symptom. **Fixed**: the probe now builds a real pool (≥4 held-out windows per speaker, ≤4
    each), encodes it itself, and **raises** rather than degrading to 0.0.
-2. **A device conclusion that was never verified.** BOARD.md asserted MPS "bs≥32 ≈ 13× CPU
-   throughput". Today's sweep measures MPS bs=32 at **24.3 s/step** and CPU bs=32 at 8.8 s/step —
-   the old note was wrong in both directions. **Fixed** with the measured table.
-3. **The launch-bound attribution itself is not yet proven.** The honest state: the scan removed
-   real sequential depth (8→3 at T=500) and is verified, but measured per-frame cost moved only
-   ~10% (1.03 → 0.90 ms/frame on MPS), because the step is dominated by memory-bound elementwise
-   kernels and the SIGREG projections, not by chunk-loop launches. Op-count profiling to settle
-   this is **pending** and must not be short-circuited by asserting the conclusion.
+2. **A device conclusion that was never verified — and the replacement number was itself
+   contaminated.** BOARD.md asserted MPS "bs≥32 ≈ 13× CPU throughput"; the old note was wrong in
+   both directions. But its replacement, "MPS bs=32 thrashes: 24.3 s/step, 0.3 kframe/s, swap →
+   8.5 GB", was captured in a sweep that **ran concurrently with v0 training on the same 8 GB
+   machine** — the thrash was contention between my own two jobs, not a property of bs=32.
+   A clean re-run (nothing else running) gives **7.8 s/step at 1.0 kframe/s, swap → 7.1 GB**, and
+   every other row of that sweep reproduced within 0.2–12% (`runs/bench_devices.jsonl`). The
+   real conclusion survives in weaker form: CPU bs=8 fp32 is still 2.8× MPS bs=8 (3.1 vs 1.1
+   kframe/s), converging to a tie at bs=32. **Fixed** with both passes side by side, a
+   contaminated-vs-clean column, and the raw logs tracked in `runs/`.
+   *Lesson: a timing without its legend — what else was running — is not a measurement of the
+   thing it names.*
+3. **A fallback that impersonated a measurement.** A re-sweep was launched as
+   `for cfg in ...; do timeout 100 cmd || echo "$cfg: TIMEOUT/FAIL"; done`. **macOS has no
+   `timeout` binary** (`which timeout` → exit 1), so every config died instantly on
+   command-not-found and the `|| echo` fallback recorded all nine as "TIMEOUT/FAIL after 100s" —
+   a total failure wearing the costume of a plausible result table. It happened to be unused
+   (the good log from an earlier run went to the board), but it was one copy-paste away from
+   being quoted. Kept as evidence: `runs/bench_stream_FAILED_timeout_nobin.log`. **Fixed** by
+   driving sweeps from Python with `subprocess(timeout=)` and writing results to a tracked
+   JSONL, so a failure has nowhere to hide.
+4. **The launch-bound attribution — resolved, and weaker than assumed.** The scan removed real
+   sequential depth (8→3 at T=500) and is verified, but measured per-frame cost on MPS moved only
+   ~10% (1.03 → 0.90 ms/frame), because the step is dominated by memory-bound elementwise kernels
+   and the SIGREG projections, not by chunk-loop launches. The op-count profile (§1.1, now run)
+   settles it: the prefix scan issues **more** ops, not fewer, and buys ≤7% wall-clock.
+   "Launch-bound" is real for *per-frame* cost (MPS ms/frame is flat across bs 8→32 in both
+   passes), but it does not follow that removing the chunk-loop launches helps.
 
 ### 2.4 What the existing gates could not have caught
 
@@ -138,9 +158,15 @@ refuted. Nothing in the suite had a performance assertion, so nobody could tell 
    scratch dirs included; cite findings in the commit.
 2. **Depth-and-launch budget at design time** — state sequential depth, launch count, and FLOPs
    for every recurrent component; put them in the board row.
-3. **Perf gate before every long run** — record ms/step and peak RSS (and swap) for the exact
-   config first; no multi-thousand-step run without it. (This is also how the bs=16/32 memory
-   cliff and the 24.3 s/step MPS thrash were caught cheaply.)
+3. **Perf gate before every long run, with a legend** — record ms/step and peak RSS for the exact
+   config first, plus **what else was running**; no multi-thousand-step run without it. A timing
+   captured while another job shared the machine is not a measurement of the config it names
+   (this is exactly how the "24.3 s/step MPS thrash" got published as a device property when it
+   was contention between two of my own processes). Prefer Python-driven sweeps with
+   `subprocess(timeout=…)` writing to a tracked JSONL: never `cmd || echo "FAILED"`, because a
+   fallback that prints a plausible status turns a total failure into a fake result — and macOS
+   has no `timeout` binary, so that pattern fails 100% of the time while looking like success.
+   Also: swap deltas on this machine rise *and fall* and prove nothing; quote peak RSS.
 4. **Device conclusions require an implementation fix first** — otherwise the note reads
    "implementation-bound, unresolved", never "the device can't do this".
 5. **No metric may return a fabricated default on an error path** — a probe that cannot run

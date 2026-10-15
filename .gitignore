@@ -227,8 +227,14 @@ Data
 model_weights/
 data/latents/
 
-# v2 one-shot artifacts: checkpoints, logs, generated audio (regenerable; see BUILD_LOG.md)
-v2_unfrozen/one-shot/runs/
+# v2 one-shot artifacts. Bulk only: checkpoints, generated audio, figure/asset dirs.
+# Small TEXT evidence (logs, jsonl) is deliberately TRACKED -- a number in the docs whose
+# backing log was gitignored (or lived in /tmp) is an unverifiable claim. See POST_MORTEM.md.
 v2_unfrozen/one-shot/runs/*.pt
-v2_unfrozen/one-shot/runs/*/
 v2_unfrozen/one-shot/runs/*.wav
+v2_unfrozen/one-shot/runs/*/
+v2_unfrozen/one-shot/runs/*.png
+# ...but the small TEXT evidence logs ARE tracked (re-include over the global *.log rule above):
+# a benchmark number quoted in the docs must ship with the run that produced it.
+!v2_unfrozen/one-shot/runs/*.log
+!v2_unfrozen/one-shot/runs/*.jsonl

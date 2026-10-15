@@ -1,0 +1,97 @@
+data: 2786 train windows / 696 held-out windows (696 held-out utts)
+step     0 | held-out recon MSE 764.465 dB² | eff-rank   8.6 | var[0.12,0.32,0.91] | spk(win) 0.000±0.000 | 0s
+  . step    25 |    705 ms/step | eta 23 min
+  . step    50 |    975 ms/step | eta 32 min
+  . step    75 |   1055 ms/step | eta 34 min
+  . step   100 |   1231 ms/step | eta 39 min
+  . step   125 |    870 ms/step | eta 27 min
+  . step   150 |    807 ms/step | eta 25 min
+  . step   175 |    915 ms/step | eta 28 min
+  . step   200 |    814 ms/step | eta 24 min
+step   200 | held-out recon MSE  59.892 dB² | eff-rank  10.0 | var[0.27,0.71,2.42] | spk(win) 0.000±0.000 | 203s
+  . step   225 |   1314 ms/step | eta 39 min
+  . step   250 |    770 ms/step | eta 22 min
+  . step   275 |    961 ms/step | eta 28 min
+  . step   300 |    979 ms/step | eta 28 min
+  . step   325 |   1019 ms/step | eta 28 min
+  . step   350 |   1050 ms/step | eta 29 min
+  . step   375 |    968 ms/step | eta 26 min
+  . step   400 |    940 ms/step | eta 25 min
+step   400 | held-out recon MSE  43.723 dB² | eff-rank  11.7 | var[0.31,0.81,2.37] | spk(win) 0.000±0.000 | 385s
+  . step   425 |   1163 ms/step | eta 31 min
+  . step   450 |   1217 ms/step | eta 31 min
+  . step   475 |   1513 ms/step | eta 38 min
+  . step   500 |   1010 ms/step | eta 25 min
+  . step   525 |    728 ms/step | eta 18 min
+  . step   550 |    789 ms/step | eta 19 min
+  . step   575 |    832 ms/step | eta 20 min
+  . step   600 |    775 ms/step | eta 18 min
+step   600 | held-out recon MSE  34.959 dB² | eff-rank  15.1 | var[0.34,0.81,2.06] | spk(win) 0.000±0.000 | 585s
+  . step   625 |    790 ms/step | eta 18 min
+  . step   650 |    624 ms/step | eta 14 min
+  . step   675 |    664 ms/step | eta 15 min
+  . step   700 |    704 ms/step | eta 15 min
+  . step   725 |    644 ms/step | eta 14 min
+  . step   750 |    789 ms/step | eta 16 min
+  . step   775 |    857 ms/step | eta 18 min
+  . step   800 |   2034 ms/step | eta 41 min
+step   800 | held-out recon MSE  30.282 dB² | eff-rank  16.9 | var[0.32,0.82,2.11] | spk(win) 0.000±0.000 | 763s
+  . step   825 |   1567 ms/step | eta 31 min
+  . step   850 |    697 ms/step | eta 13 min
+  . step   875 |    755 ms/step | eta 14 min
+  . step   900 |    666 ms/step | eta 12 min
+  . step   925 |    726 ms/step | eta 13 min
+  . step   950 |    871 ms/step | eta 15 min
+  . step   975 |    734 ms/step | eta 13 min
+  . step  1000 |    778 ms/step | eta 13 min
+step  1000 | held-out recon MSE  27.450 dB² | eff-rank  17.6 | var[0.33,0.82,2.85] | spk(win) 0.000±0.000 | 933s
+  . step  1025 |   1185 ms/step | eta 19 min
+  . step  1050 |    695 ms/step | eta 11 min
+  . step  1075 |   1143 ms/step | eta 18 min
+  . step  1100 |    801 ms/step | eta 12 min
+  . step  1125 |    655 ms/step | eta 10 min
+  . step  1150 |    657 ms/step | eta 9 min
+  . step  1175 |    693 ms/step | eta 10 min
+  . step  1200 |    631 ms/step | eta 8 min
+step  1200 | held-out recon MSE  24.133 dB² | eff-rank  18.6 | var[0.32,0.81,4.98] | spk(win) 0.000±0.000 | 1094s
+  . step  1225 |    662 ms/step | eta 9 min
+  . step  1250 |    904 ms/step | eta 11 min
+  . step  1275 |    704 ms/step | eta 9 min
+  . step  1300 |    705 ms/step | eta 8 min
+  . step  1325 |    814 ms/step | eta 9 min
+  . step  1350 |    875 ms/step | eta 9 min
+  . step  1375 |    710 ms/step | eta 7 min
+  . step  1400 |    684 ms/step | eta 7 min
+step  1400 | held-out recon MSE  21.025 dB² | eff-rank  19.4 | var[0.32,0.79,7.27] | spk(win) 0.000±0.000 | 1246s
+  . step  1425 |    702 ms/step | eta 7 min
+  . step  1450 |    698 ms/step | eta 6 min
+  . step  1475 |    658 ms/step | eta 6 min
+  . step  1500 |    705 ms/step | eta 6 min
+  . step  1525 |    784 ms/step | eta 6 min
+  . step  1550 |    661 ms/step | eta 5 min
+  . step  1575 |    629 ms/step | eta 4 min
+  . step  1600 |    688 ms/step | eta 5 min
+step  1600 | held-out recon MSE  19.628 dB² | eff-rank  20.5 | var[0.32,0.77,9.78] | spk(win) 0.000±0.000 | 1384s
+  . step  1625 |    665 ms/step | eta 4 min
+  . step  1650 |    691 ms/step | eta 4 min
+  . step  1675 |    741 ms/step | eta 4 min
+  . step  1700 |    847 ms/step | eta 4 min
+  . step  1725 |    820 ms/step | eta 4 min
+  . step  1750 |    795 ms/step | eta 3 min
+  . step  1775 |    848 ms/step | eta 3 min
+  . step  1800 |    739 ms/step | eta 2 min
+step  1800 | held-out recon MSE  17.605 dB² | eff-rank  21.2 | var[0.32,0.76,10.58] | spk(win) 0.000±0.000 | 1537s
+  . step  1825 |    869 ms/step | eta 3 min
+  . step  1850 |    667 ms/step | eta 2 min
+  . step  1875 |    867 ms/step | eta 2 min
+  . step  1900 |    780 ms/step | eta 1 min
+  . step  1925 |    842 ms/step | eta 1 min
+  . step  1950 |    902 ms/step | eta 1 min
+  . step  1975 |    684 ms/step | eta 0 min
+  . step  2000 |    745 ms/step | eta 0 min
+step  2000 | held-out recon MSE  17.103 dB² | eff-rank  20.8 | var[0.31,0.72,11.28] | spk(win) 0.000±0.000 | 1696s
+
+2000 steps in 28.3 min
+ckpt: 3 shard(s), 25.3MB total (8.4MB, 8.8MB, 8.1MB)
+saved ckpt prefix v2_unfrozen/one-shot/runs/v0 (+ .split.pt)
+EXIT=0

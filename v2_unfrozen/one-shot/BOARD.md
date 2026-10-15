@@ -57,12 +57,32 @@
   candidate M-forms, all fail; error-correcting writes make transitions state-dependent
   (unlike linear attention). Gated DeltaNet's chunk form = separate follow-up with real math.
 - Speed: CPU bs=4 T=120 **147 ms/step (was ~1300)**.
-- **CORRECTED 15 Oct (real sweep, bs 8/16/32, T=250 — the earlier "MPS at bs≥32" note was wrong):**
-  MPS throughput is *flat* at **1.1 kframe/s for bs 8 and 16** (launch-bound: constant per-frame
-  cost as batch grows) and collapses to 0.3 kframe/s at bs=32 (24.3 s/step, swap → 8.5 GB, the
-  8 GB machine thrashes). CPU bs=8 fp32 = **609 ms/step, 3.3 kframe/s, 1.13 GB peak** — the best
-  configuration on this machine and the one v0 trains with. CPU bs=16/32 are 3806/8839 ms/step
-  (memory-pressure cliff). bf16 autocast on CPU is 19× *slower* (12.1 s/step) — never use it there.
+- **Device sweep, bs 8/16/32, T=250, fp32 + bf16 — MEASURED TWICE, and the first pass was
+  contaminated (16 Oct re-verify):**
+
+  | config | pass 1, `14:45` (contended) | pass 2, clean re-run | backing |
+  |---|---|---|---|
+  | cpu bs=8 fp32 | 609 ms/step, 3.3 kframe/s, RSS 1.13 GB | **643 ms/step, 3.1 kframe/s, RSS 1.11 GB** | ✓ reproduced |
+  | cpu bs=16 fp32 | 3806 ms/step, 1.1 kframe/s | **3669 ms/step, 1.1 kframe/s, RSS 1.55 GB** | ✓ reproduced |
+  | cpu bs=32 fp32 | 8839 ms/step, 0.9 kframe/s | **7829 ms/step, 1.0 kframe/s, RSS 2.79 GB** | ✓ reproduced |
+  | mps bs=8 fp32 | 1796 ms/step, 1.1 kframe/s | **1811 ms/step, 1.1 kframe/s** | ✓ reproduced |
+  | mps bs=16 fp32 | 3552 ms/step, 1.1 kframe/s | **3560 ms/step, 1.1 kframe/s** | ✓ reproduced |
+  | mps bs=32 fp32 | 24270 ms/step, 0.3 kframe/s, swap → 8543 MB | **7809 ms/step, 1.0 kframe/s, swap → 7093 MB** | ✗ **contaminated — corrected** |
+  | mps bs=8/16/32 bf16 | not measured | **1941 / 3627 / 7121 ms/step** | ✓ bf16 buys MPS nothing |
+  | cpu bs=8 bf16 | 12.1 s/step ("19× slower") | **12277 ms/step = 12.3 s/step (19.1× fp32)** | ✓ reproduced |
+
+  **The correction that matters:** the first pass ran *while v0 training was occupying the same
+  8 GB machine* (visible in the transcript — I killed a competing bench mid-run for exactly that
+  reason). The famous "MPS bs=32 thrashes: 24.3 s/step, 0.3 kframe/s" is a **contention artifact,
+  not a device property** — clean, it is 7.8 s/step at 1.0 kframe/s, and MPS per-frame cost is flat
+  across bs 8→32 (launch-bound, which *is* real and reproduces). CPU bs=8 fp32 remains the operating
+  point and what v0 trained with, on throughput: 3.1 vs 1.1 kframe/s = **2.8× faster than MPS at
+  bs=8**, converging to a tie at bs=32 (1.0 vs 1.0). bf16 on CPU is confirmed 19× slower — never use it.
+  Swap deltas decrease as often as they grow on this machine and are **not** usable as pressure
+  evidence; quote peak RSS instead.
+  Backing: `runs/bench2_contended_15Oct1445.log` (pass 1) + `runs/bench_devices.jsonl` (pass 2,
+  `_bench_one.py` per config); `runs/bench_stream_FAILED_timeout_nobin.log` is a *failed* sweep kept
+  as evidence of a silent-fallback defect (see POST_MORTEM §2.3).
 
 ## Run gates (from DESIGN_v0 §5)
 
