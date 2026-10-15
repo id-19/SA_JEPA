@@ -226,3 +226,6 @@ Data
 # SA-CE v0: big binaries stay out of git
 model_weights/
 data/latents/
+
+# v2 one-shot artifacts: checkpoints, logs, generated audio (regenerable; see BUILD_LOG.md)
+v2_unfrozen/one-shot/runs/

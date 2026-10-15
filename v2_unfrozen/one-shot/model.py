@@ -55,6 +55,9 @@ class DeltaCore(nn.Module):
         self.gate = nn.Linear(d, d)
         self.d_model = d
         self.CH = 64
+        # Parallel-scan dispatch: chunk affine maps composed by log-depth prefix scan instead
+        # of a sequential chunk loop (sequential depth N_chunks -> log2(N_chunks)).
+        self.parallel_scan = True
 
     def _qkv(self, x):
         B, T, _ = x.shape
@@ -78,9 +81,67 @@ class DeltaCore(nn.Module):
         k = k.permute(0, 2, 1, 3).reshape(B * NH_DELTA, T, DH)
         v = v.permute(0, 2, 1, 3).reshape(B * NH_DELTA, T, DH)
         beta = beta.permute(0, 2, 1).reshape(B * NH_DELTA, T)
-        y = self._chunk_scan(q, k, v, beta)                        # (B*H, T, DH)
+        scan = self._chunk_scan_parallel if self.parallel_scan else self._chunk_scan
+        y = scan(q, k, v, beta)                                   # (B*H, T, DH)
         y = y.view(B, NH_DELTA, T, DH).permute(0, 2, 1, 3).reshape(B, T, -1)
         return self.out(y * torch.sigmoid(self.gate(x)))
+
+    def _chunk_maps(self, k, v, beta, CH):
+        """Per-chunk AFFINE maps of the delta recurrence, computed for ALL chunks in parallel.
+        S_out = S_in @ M_c + b_c  with
+            M_c = I - W_c^T K_c        (DK, DK)      (state transition)
+            b_c = U_c^T K_c           (DV, DK)      (state input)
+        where W_c = Tm K_c, U_c = Tm V_c, Tm = (I + tril(diag(b) K K^T, -1))^-1 diag(b).
+        Returns M (BH,NC,DK,DK), b (BH,NC,DV,DK), W, U (BH,NC,CH,·), K (BH,NC,CH,DK)."""
+        BH, T, DK = k.shape
+        NC = T // CH
+        K = k.view(BH, NC, CH, DK)
+        V = v.view(BH, NC, CH, DK)
+        Bc = beta.view(BH, NC, CH)
+        A = torch.tril((Bc.unsqueeze(-1) * K) @ K.transpose(2, 3), diagonal=-1)
+        eye_c = torch.eye(CH, device=k.device, dtype=k.dtype)
+        Tm = torch.linalg.inv(eye_c + A) @ torch.diag_embed(Bc)
+        W = Tm @ K
+        U = Tm @ V
+        eye_d = torch.eye(DK, device=k.device, dtype=k.dtype)
+        M = eye_d - W.transpose(2, 3) @ K
+        b = U.transpose(2, 3) @ K
+        return M, b, W, U, K
+
+    def _chunk_scan_parallel(self, q, k, v, beta):
+        """Log-depth parallel scan: identical math to _chunk_scan, sequential depth
+        log2(N_chunks) instead of N_chunks.
+
+        Affine maps compose associatively — (S M1 + b1) M2 + b2 = S (M1 M2) + (b1 M2 + b2) —
+        so the incoming state of every chunk is a Hillis-Steele prefix composition of the
+        per-chunk maps (the same idea as Mamba's parallel scan). Output convention and mask
+        identical to the sequential version (read-after-update, diagonal included)."""
+        BH, T, DK = k.shape
+        CH = self.CH
+        NC = (T + CH - 1) // CH
+        pad = NC * CH - T
+        if pad:
+            k = torch.cat([k, k.new_zeros(BH, pad, DK)], 1)
+            v = torch.cat([v, v.new_zeros(BH, pad, DK)], 1)
+            beta = torch.cat([beta, beta.new_zeros(BH, pad)], 1)
+            q = torch.cat([q, q.new_zeros(BH, pad, DK)], 1)
+        M, b, W, U, K = self._chunk_maps(k, v, beta, CH)
+        # inclusive prefix scan of (M, b) with start state zero -> state AFTER each chunk
+        s = 1
+        while s < NC:
+            M_new, b_new = M.clone(), b.clone()
+            M_new[:, s:] = M[:, : NC - s] @ M[:, s:]
+            b_new[:, s:] = b[:, : NC - s] @ M[:, s:] + b[:, s:]
+            M, b = M_new, b_new
+            s *= 2
+        S_in = b.new_zeros(BH, NC, DK, DK)          # state BEFORE each chunk
+        if NC > 1:
+            S_in[:, 1:] = b[:, :-1]
+        Qc = q.view(BH, NC, CH, DK)
+        core = U - W @ S_in.transpose(2, 3)                     # (BH,NC,CH,DV)
+        mask = torch.tril(torch.ones(CH, CH, device=k.device, dtype=k.dtype), diagonal=0)
+        o = Qc @ S_in.transpose(2, 3) + ((Qc @ K.transpose(2, 3)) * mask) @ core
+        return o.reshape(BH, NC * CH, DK)[:, :T]
 
     def _chunk_scan(self, q, k, v, beta):
         """Batched chunkwise delta scan. q/k/v: (BH, T, DH), beta: (BH, T), states zero-init.
@@ -277,11 +338,34 @@ def sigreg(z, n_proj=512, n_sample=4096, isotropy=0.0):
     return r
 
 
+class MelDecoder(nn.Module):
+    """Latents (B,T,256) -> mel (B,T,80). Lightweight time-mixing conv stack, causal-ish.
+
+    This is the evidence path: it makes the model's output audible (latents -> mel ->
+    Griffin-Lim). Trained either post-hoc on frozen latents (honest frozen-feature test)
+    or jointly via a small auxiliary reconstruction weight (recon_w in SAJePAV0.loss)."""
+
+    def __init__(self, d=D_MODEL, n_mels=80, hidden=256):
+        super().__init__()
+        self.inp = nn.Conv1d(d, hidden, kernel_size=1)
+        self.c1 = nn.Conv1d(hidden, hidden, kernel_size=5, padding=4)
+        self.c2 = nn.Conv1d(hidden, hidden, kernel_size=5, padding=4)
+        self.out = nn.Conv1d(hidden, n_mels, kernel_size=1)
+
+    def forward(self, e):
+        T = e.shape[1]
+        h = self.inp(e.transpose(1, 2))
+        h = F.gelu(self.c1(h)[:, :, :T])
+        h = F.gelu(self.c2(h)[:, :, :T])
+        return self.out(h).transpose(1, 2)
+
+
 class SAJePAV0(nn.Module):
     def __init__(self):
         super().__init__()
         self.encoder = Encoder()
         self.predictor = Predictor()
+        self.decoder = MelDecoder()
         # sigreg fidelity/speed dial: 512 default (paper-grade); lower = noisier estimator.
         # ESTIMATE NOISE AVERAGES OVER STEPS (regularizer), so gate-4-scale runs use 128.
         self.sigreg_nproj = 512
@@ -294,7 +378,7 @@ class SAJePAV0(nn.Module):
         preds = self.predictor(e)  # list per horizon
         return e, preds
 
-    def loss(self, mels, alpha=0.1, weights=None):
+    def loss(self, mels, alpha=0.1, weights=None, recon_w=0.0):
         e, preds = self(mels)
         B, T, _ = e.shape
         if weights is None:
@@ -310,7 +394,15 @@ class SAJePAV0(nn.Module):
             l_terms[d] = mse
             total = total + w * mse
         r = sigreg(e, n_proj=self.sigreg_nproj, isotropy=self.sigreg_isotropy)
-        return total / len(HORIZONS) + alpha * r, {**{f"d{k}": v for k, v in l_terms.items()}, "sigreg": r}, e
+        total = total / len(HORIZONS) + alpha * r
+        parts = {**{f"d{k}": v for k, v in l_terms.items()}, "sigreg": r}
+        if recon_w > 0:
+            # Auxiliary mel reconstruction (anchor): keeps latent information lossless enough
+            # for the decoder path. Default OFF -> gate behaviour unchanged.
+            rec = F.mse_loss(self.decoder(e), mels)
+            total = total + recon_w * rec
+            parts["recon"] = rec
+        return total, parts, e
 
 
 # ---------------------------------------------------------------- six-check smoke
@@ -339,12 +431,18 @@ def _smoke():
     assert loss.dtype.is_floating_point and loss.dim() == 0, loss.dtype
     loss.backward()
     nograd = [n for n, p in m.named_parameters() if p.grad is None]
+    # heads for horizons beyond the window are skipped by the loss on purpose (d >= T);
+    # their grads are legitimately None on short smoke windows. Only flag the rest.
+    nograd_unexpected = [n for n in nograd if not any(f"heads.{i}" in n for i, d in enumerate(HORIZONS) if d >= x.shape[1])]
+    skipped = [f"heads.{i}(d={d}>=T)" for i, d in enumerate(HORIZONS) if d >= x.shape[1]]
     with torch.no_grad():
         e_state = m.encoder(x)  # (2, 60, 256) — the delta blocks' actual input
     da_beta = m.encoder.blocks[0].core.wb(e_state).sigmoid()
     beta_spread = da_beta.std().item()
     a_conv_spread = m.encoder.blocks[0].core.conv.weight.grad.std().item()
-    print(f"[3] grad flow: {'PASS' if not nograd else f'FAIL {nograd}'} | beta spread {beta_spread:.3f} (want >0) | conv grad std {a_conv_spread:.2e}")
+    print(f"[3] grad flow: {'PASS' if not nograd_unexpected else f'FAIL {nograd_unexpected}'}"
+          f"{' (skipped by design: ' + ', '.join(skipped) + ')' if skipped else ''}"
+          f" | beta spread {beta_spread:.3f} (want >0) | conv grad std {a_conv_spread:.2e}")
 
     # 4 BIBO: noise chunk then zero-tail -> state norm must SHRINK across chunks
     # (canonical decay-free core forgets by OVERWRITE: a constant-key tail writes the conv-bias
