@@ -1,6 +1,6 @@
 # Implement a simple linear attention layer
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class LinFormer(nn.Module):
@@ -36,7 +36,7 @@ class LinFormer(nn.Module):
             k_t = k_t / torch.sqrt(torch.einsum("bk, bk -> b", k_t, k_t).unsqueeze(dim=-1)+1e-6)
             # state update (B, k, v)
             # (bk, bv) -> bkv [OUTER PRODUCT]
-            state += torch.einsum('bki,ibv -> bkv',k_t.unsqueeze(dim=-1), v_t.unsqueeze(dim=0))
+            state = state + torch.einsum('bki,ibv -> bkv',k_t.unsqueeze(dim=-1), v_t.unsqueeze(dim=0))
             # Output projection
             out_raw = torch.einsum('bkv,bk->bv', state, q_t)
             output = self.W_o(out_raw)
