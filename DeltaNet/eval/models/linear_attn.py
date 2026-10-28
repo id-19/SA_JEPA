@@ -32,15 +32,14 @@ class LinFormer(nn.Module):
         q = F.normalize(torch.einsum('btc,cq->btq', x, self.W_q), dim=-1, eps=1e-6)
         k = F.normalize(torch.einsum('btc,ck->btk', x, self.W_k), dim=-1, eps=1e-6)
         v = torch.einsum('btc,cv->btv', x, self.W_v)
-        # 2. Calculate state updates, then do a reduce operation from t = 0 to t = T
-        state_raw = torch.einsum('btk,btv->btkv', k,v)
-        print("dims of state raw:", state_raw.shape)
-        state = torch.cumsum(state_raw, dim=1)
-        print("dims of state:", state.shape)
+        # 2. Calculate state updates
+        # Find the matrix of q x k
+        masked_scores = torch.tril(torch.ones(T, T)) * torch.einsum('bsq, btq -> bst', q, k)
+        # Scores is now (B, T, T). Multiply with v (B, T, V) to get (B, T, V)
+        v = torch.einsum('bst, btv -> bsv', masked_scores, v)
 
         # 3. Calculate output projection
-        output_pre = torch.einsum('btqv, btq -> btv', state, q)
-        output = torch.einsum('btv, vo -> bto', output_pre, self.W_o)
+        output = torch.einsum('btv, vo -> bto', v, self.W_o)
         return output
 
     def legacy_call(self, x):
