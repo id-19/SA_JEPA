@@ -1,6 +1,0 @@
-cpu bs=8 fp32:     609 ms/step |   3.3 kframe/s | peak RSS 1.13 GB | swap 5470->5446 MB | wall 6s
-cpu bs=16 fp32:    3806 ms/step |   1.1 kframe/s | peak RSS 1.62 GB | swap 5446->5671 MB | wall 30s
-cpu bs=32 fp32:    8839 ms/step |   0.9 kframe/s | peak RSS 2.76 GB | swap 5671->6768 MB | wall 70s
-mps bs=8 fp32:    1796 ms/step |   1.1 kframe/s | peak RSS 2.76 GB | swap 6768->6616 MB | wall 15s
-mps bs=16 fp32:    3552 ms/step |   1.1 kframe/s | peak RSS 2.76 GB | swap 6616->6541 MB | wall 29s
-mps bs=32 fp32:   24270 ms/step |   0.3 kframe/s | peak RSS 2.76 GB | swap 6541->8543 MB | wall 175s

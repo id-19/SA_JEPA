@@ -1,9 +1,0 @@
-data: 2786 train windows / 696 held-out windows (696 held-out utts)
-probe pool: 148 windows over 37 speakers (min 4 windows/speaker)
-step     0 | held-out recon MSE 764.465 dB² | eff-rank   8.6 | var[0.12,0.32,0.91] | spk(win) nan±nan | 0s
-  . step    25 |    573 ms/step | eta 0 min
-step    25 | held-out recon MSE 297.098 dB² | eff-rank   8.2 | var[0.06,0.17,0.51] | spk(win) 0.941±0.010 | 35s
-
-25 steps in 0.6 min
-ckpt: 3 shard(s), 25.3MB total (8.4MB, 8.8MB, 8.1MB)
-saved ckpt prefix v2_unfrozen/one-shot/runs/_probecheck (+ .split.pt)

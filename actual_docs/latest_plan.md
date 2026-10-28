@@ -1,22 +1,18 @@
 #### This document tracks hwat our current base idea is
 
 # SA‑JEPA v0 Plan (Current Version)
-1. Data: Data wise- start with speech, for now, expand to other types of audio later
-2. Architecture(v0 basic): Both audio encoder and predictor are just transformers with Mamba layers inserted
-  - No need for a tokeniser, log mel spectrograms are already in matrix form.
+1. Data: Text and Audio. Start off with text only, expand to audio(speech focused)
+2. Architecture overview: Both audio encoder and predictor are just transformers with DeltaNet layers inserted
+  - Text: Simple tokeniser
+  - Audio: No need for a tokeniser, log mel spectrograms are already in matrix form. Separate encoder
   - Single encoder, single predictor, train linear probes from time to time
-3. Training:
+3. Architecture(more):
+  - GQA/MLA attention + DeltaNet(1:3/1:4 ratio) backbone for encoder etc.
+  - 
+4. Training:
   - Patch embedding based
   - SIGREG + pred loss
-4. Future ideas to try(and validate):
-  - MoE
-  - Constant batch size, but different size clips composed to make that batch size
-  - Recurrent attention - to max out params
-  - Bigger model + LoRA
-  - GQA and other non-vanilla attention types
-  - (Add more, later, don't waste time now)
-  - The new attention residuals and stuff
-  - Dual-timescale memory: leaky fast bank + non-leaky slow bank with learned periodic refresh (cf. Compressive Transformer, LSTM cell state, fast weights)
+  - V2: Latent space reasoning
 
 ## SSM Rung Progression — MILESTONE REACHED 10 Oct 2026
 Board: blind 0.4835 / wall 0.20245 / ZOH par 0.06198 / full-matrix 0.0299 / real-diag 0.053 / S4D rotation 0.02874 / selective-Delta real-pole 0.019658 (08 Oct) / **selective-Delta COMPLEX 0.01279 @ step 3150 (10 Oct, mid-run, NOT a certified endpoint) — CAPACITY CONTROL CLOSED 10 Oct: ω frozen at init, same seed/steps/112 floats → 0.019277 @ step 1950 (lands on the real-pole arm's 0.019658); ω trained → 0.013567 @ step 1950 ⇒ the win is the LEARNED ROTATION, not the 1.75× capacity. d_state=8 + trained ω → 0.017606 @ step 1950 (provisional).**

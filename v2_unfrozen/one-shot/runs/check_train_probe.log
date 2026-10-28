@@ -1,5 +1,0 @@
-probe pool: 148 windows over 37 speakers (min 4 windows/speaker)
-blind chance level: 0.027  <- the published '0.000' was BELOW chance, which is the tell that it measured nothing
-
-FIXED probe on runs/v0  ->  spk(win) 0.970+-0.010
-(what the training log should have printed; the log's pre-fix value was 0.000+-0.000)

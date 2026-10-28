@@ -13,8 +13,9 @@ The giants train on GPU clusters with 80GB of memory and quadratic attention ove
 
 Our bet: the pieces are
 
-1. **JEPA** — predict representations, not signals,
+1. **JEPA with SIGREG/distribution loss** — predict representations, not signals,
 2. **delta-rule recurrent memory** — Mamba's descendants, constant memory per step,
+  - Possibly, can just try out Mamba 3 and Delta-rule both
 3. **hybrid non-quadratic attention** — a 3:1 recurrent:gated-attention layout,
 4. **ultra-sparse MoE** — capacity without activation cost,
 
