@@ -15,12 +15,12 @@ class UnifiedDeltaNet(nn.Module):
         self.d_v = d_v
 
         # Initialise W_k, W_q and W_v
-        self.W_q = nn.Parameter(torch.randn((d_input, d_qk)))
-        self.W_k = nn.Parameter(torch.randn((d_input, d_qk)))
-        self.W_v = nn.Parameter(torch.randn((d_input, d_v)))
+        self.W_q = nn.Parameter(torch.randn((d_input, d_qk)) / (1.0 / (d_input ** 0.5)))
+        self.W_k = nn.Parameter(torch.randn((d_input, d_qk)) / (1.0 / (d_input ** 0.5)))
+        self.W_v = nn.Parameter(torch.randn((d_input, d_v)) / (1.0 / (d_input ** 0.5)))
 
         # Output projection
-        self.W_o = nn.Parameter(torch.randn((d_v, d_output)))
+        self.W_o = nn.Parameter(torch.randn((d_v, d_output)) / (1.0 / (d_v ** 0.5)))
 
         # Write strength - beta(common to all)
         self.W_b = nn.Parameter(torch.randn((d_input, 1))) # Takes (B,T,C) -> (B,T), which is then broadcast
@@ -46,7 +46,7 @@ class UnifiedDeltaNet(nn.Module):
             q = F.normalize(torch.einsum('bc,cq->bq', input, self.W_q))
             k = F.normalize(torch.einsum('bc,ck->bk', input, self.W_k))
             v = torch.einsum('bc,cv->bv', input, self.W_v)
-            
+
             # alpha and beta
             if self.decay != None:
                 alpha = torch.sigmoid(input @ self.W_a) # (B,1) for scalar or (B,K) for vector
