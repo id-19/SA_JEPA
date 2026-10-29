@@ -23,24 +23,35 @@ class LinFormer(nn.Module):
         # Output projection
         self.W_o = nn.Parameter(torch.randn((D_v if D_v else model_dim, D_output)))
 
-    def forward(self, x):
+    def forward(self, x, chunk_size = 128):
         if x.ndim == 2:
             x = torch.unsqueeze(x, dim=0)
         B,T,C = x.shape
-        ## Parallel version
-        # 1. Calculate q,k,v in one shot
-        q = F.normalize(torch.einsum('btc,cq->btq', x, self.W_q), dim=-1, eps=1e-6)
-        k = F.normalize(torch.einsum('btc,ck->btk', x, self.W_k), dim=-1, eps=1e-6)
-        v = torch.einsum('btc,cv->btv', x, self.W_v)
-        # 2. Calculate state updates
-        # Find the matrix of q x k
-        masked_scores = torch.tril(torch.ones(T, T)) * torch.einsum('bsq, btq -> bst', q, k)
-        # Scores is now (B, T, T). Multiply with v (B, T, V) to get (B, T, V)
-        v = torch.einsum('bst, btv -> bsv', masked_scores, v)
-
-        # 3. Calculate output projection
-        output = torch.einsum('btv, vo -> bto', v, self.W_o)
-        return output
+        ## Parallel + chunked version
+        S = torch.zeros((B, self.D_qk, self.D_v)) # (B, T, K, V)
+        final_pre = None
+        for chunk_start in range(0, T, chunk_size):
+            input = x[:, chunk_start:chunk_start + chunk_size, :]
+            q = torch.einsum('btc, cq->btq', input, self.W_q)
+            q = F.normalize(q, eps=1e-6, dim=-1)
+            k = torch.einsum('btc, cq->btq', input, self.W_k)
+            k = F.normalize(k, eps=1e-6, dim=-1)
+            v = torch.einsum('btc, cv->btv', input, self.W_v)
+            # Find KV and cumsum it
+            chunk_state = torch.cumsum(torch.einsum('bck,bcv->bckv', k, v), dim=1)
+            # Add previous S to chunk state i.e. final state of prevuous chunk added
+            # [:, None, :, :] inserts a new dim along C dimension(syntatic sugar for unsqueeze)
+            chunk_state = S[:, None, :, :]  + chunk_state
+            # Get pre-proj output
+            chunk_pre = torch.einsum('bckv, bck->bcv', chunk_state, q)
+            if chunk_start == 0:
+                final_pre = chunk_pre
+            else:
+                assert(final_pre != None), "Final pre is None"
+                final_pre = torch.cat([final_pre, chunk_pre], dim=1)
+            # Add back to chunk-global state
+            S = chunk_state[:, -1, :, :]
+        return torch.einsum('btv, vo -> bto', final_pre, self.W_o)
 
     def legacy_call(self, x):
         if x.ndim == 2:
