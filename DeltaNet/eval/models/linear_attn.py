@@ -16,12 +16,12 @@ class LinFormer(nn.Module):
         self.D_v = D_v if D_v else model_dim
 
         # Initialise W_k, W_q and W_v
-        self.W_q = nn.Parameter(torch.randn((D_input, D_qk if D_qk else model_dim))/ (1.0 / (D_input ** 0.5)))
-        self.W_k = nn.Parameter(torch.randn((D_input, D_qk if D_qk else model_dim)) / (1.0 / (D_input ** 0.5)))
-        self.W_v = nn.Parameter(torch.randn((D_input, D_v if D_v else model_dim)) / (1.0 / (D_input ** 0.5)))
+        self.W_q = nn.Parameter(torch.randn((D_input, D_qk if D_qk else model_dim))* (1.0 / (D_input ** 0.5)))
+        self.W_k = nn.Parameter(torch.randn((D_input, D_qk if D_qk else model_dim)) * (1.0 / (D_input ** 0.5)))
+        self.W_v = nn.Parameter(torch.randn((D_input, D_v if D_v else model_dim)) * (1.0 / (D_input ** 0.5)))
 
         # Output projection
-        self.W_o = nn.Parameter(torch.randn((D_v if D_v else model_dim, D_output)) / (1.0 / (self.D_v ** 0.5)))
+        self.W_o = nn.Parameter(torch.randn((D_v if D_v else model_dim, D_output)) * (1.0 / (self.D_v ** 0.5)))
 
     def forward(self, x, chunk_size = 128):
         if x.ndim == 2:
