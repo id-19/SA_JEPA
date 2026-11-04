@@ -115,9 +115,14 @@ class ParallelGatedDeltaNet(nn.Module):
 
 
 if __name__ == '__main__':
-    data = torch.randn(3, 5, 7)
-    D_net = ParallelGatedDeltaNet(D_input = 7, D_output = 1, D_qk = 8, D_v = 8)
+    import time
+    data = torch.randn(32, 1024*8, 128)
+    D_net = ParallelGatedDeltaNet(D_input = 128, D_output = 32, D_qk = 32, D_v = 32)
+    t1 = time.time()
     outputs = D_net(data)
+    t2 = time.time()
     ref_outs = D_net.legacy_out(data)
-    print(outputs)
+    t3 = time.time()
+    print(f"time taken by sequential: {t3-t2}, time taken by parallel chunked: {t2 - t1}, speedup: {(t3-t2)/(t2-t1)}")
+    print(outputs.shape, ref_outs.shape)
     print(torch.allclose(outputs, ref_outs))
