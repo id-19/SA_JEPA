@@ -36,7 +36,7 @@ class ParallelKDA(nn.Module):
         # Solve this equation you get(equivalent)
         # S_(t+1) = alpha * (I - beta * k_t^T * k_t) * S_t + beta * k_t * v_t
         B,T,C = x.shape
-        S = torch.zeros((B, self.D_qk, self.D_v))
+        S = torch.zeros((B, self.D_qk, self.D_v), device=x.device, dtype=x.dtype)
         output = []
         for t in range(T):
             input = x[:,t,:]
@@ -49,7 +49,7 @@ class ParallelKDA(nn.Module):
             beta = (torch.sigmoid(input @ self.W_b)).view(B,1,1) # So we can multiply cleanly by (B,K,K)
 
             # Find A
-            A = (torch.eye(self.D_qk).unsqueeze(dim=0) - beta * torch.einsum('bk,bs->bks', k, k))
+            A = (torch.eye(self.D_qk, device=x.device, dtype=x.dtype).unsqueeze(dim=0) - beta * torch.einsum('bk,bs->bks', k, k))
 
             # Write state update
             S_decay = alpha.unsqueeze(-1) * S
@@ -66,12 +66,12 @@ class ParallelKDA(nn.Module):
             output.append(O @ self.W_o)
         return torch.stack(output, dim=1)
 
-    def forward(self, x, chunk_size = 16):
+    def forward(self, x, chunk_size = 32):
         # Numerically stable chunked parallel form.
         # Decay ratios are computed as exp(clamped log-differences) instead of
         # dividing by a possibly underflowed-to-zero cumulative decay D.
         bsize,T,_ = x.shape
-        S_in = torch.zeros((bsize, self.D_qk, self.D_v))
+        S_in = torch.zeros((bsize, self.D_qk, self.D_v), device=x.device, dtype=x.dtype)
         outputs = []
         for cs in range(0, T, chunk_size):
             input = x[:, cs:cs+chunk_size]
@@ -93,11 +93,11 @@ class ParallelKDA(nn.Module):
             weight = torch.exp(diff_ls)
 
             # 3. G for the triangular solve
-            G = (K.unsqueeze(2) * K.unsqueeze(1) * weight).sum(dim=-1)  # (B, L, L)
+            G = torch.einsum('blk,bsk,blsk->bls', K, K, weight)  # (B, L, L)
 
             Kdash = K * D  # (B, L, K)
-            M_minus = torch.tril(torch.ones((lc, lc)), diagonal=-1)
-            Lmat = torch.eye(lc) + M_minus.view(1, lc, lc) * (B.view(bsize, lc, 1) * G)
+            M_minus = torch.tril(torch.ones((lc, lc), device=x.device, dtype=x.dtype), diagonal=-1)
+            Lmat = torch.eye(lc, device=x.device, dtype=x.dtype) + M_minus.view(1, lc, lc) * (B.view(bsize, lc, 1) * G)
 
             # 4. Solve for W and U
             rhs = B.unsqueeze(dim=-1) * torch.cat((Kdash, V), dim=-1)  # (B, L, K+V)
@@ -105,8 +105,8 @@ class ParallelKDA(nn.Module):
             W, U = solve.split([self.D_qk, self.D_v], dim=-1)
 
             # 5. Scores
-            scores = (Qraw.unsqueeze(2) * K.unsqueeze(1) * weight).sum(dim=-1)  # (B, L, L)
-            M = torch.tril(torch.ones((lc, lc)))
+            scores = torch.einsum('blk,bsk,blsk->bls', Qraw, K, weight)  # (B, L, L)
+            M = torch.tril(torch.ones((lc, lc), device=x.device, dtype=x.dtype))
             scores = M.view(1, lc, lc) * scores
 
             E = U - torch.einsum('btk,bkv->btv', W, S_in)  # (B, L, V)
