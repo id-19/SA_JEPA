@@ -1,21 +1,30 @@
+"""DeltaNet family arms for the shared eval runner."""
+
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent))        # eval/models
-sys.path.insert(1, str(Path(__file__).resolve().parent.parent))  # eval
-sys.path.insert(2, str(Path(__file__).resolve().parent.parent.parent))  # DeltaNet
 
-import torch
 import torch.nn as nn
+
+_evals = Path(__file__).resolve().parent
+_dn = _evals.parent / "DeltaNet"
+for p in (_evals, _dn):
+    s = str(p)
+    if s not in sys.path:
+        sys.path.insert(0, s)
 
 from linear_attn import LinFormer
 from delta_net import UnifiedDeltaNet
+from parallel_dn import ParallelDeltaNet
+from parallel_gdn import ParallelGatedDeltaNet
 from longhorn import LonghornArm
 from mamba2 import Mamba2Arm
 
 ARMS = ["la", "mamba2", "longhorn", "deltanet", "gdn", "kda"]
 
+
 def _w(d_in, loss):
     return 64 if loss == "ce" else d_in
+
 
 class ArmsModel(nn.Module):
     def __init__(self, arm, d_in, d_out, loss):
@@ -25,9 +34,9 @@ class ArmsModel(nn.Module):
         if arm == "la":
             self.net = LinFormer(D_input=w, D_output=d_out, model_dim=w)
         elif arm == "deltanet":
-            self.net = UnifiedDeltaNet(w, d_out, w, w, None)
+            self.net = ParallelDeltaNet(w, d_out, w, w)
         elif arm == "gdn":
-            self.net = UnifiedDeltaNet(w, d_out, w, w, "scalar")
+            self.net = ParallelGatedDeltaNet(w, d_out, w, w)
         elif arm == "kda":
             self.net = UnifiedDeltaNet(w, d_out, w, w, "vector")
         elif arm == "mamba2":

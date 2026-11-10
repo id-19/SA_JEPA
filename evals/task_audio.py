@@ -51,7 +51,7 @@ TARBALL_MEMBER = "LibriSpeech/dev-clean/2277/149896/2277-149896-0005.flac"
 
 
 def _repo_root():
-    root = Path(__file__).resolve().parents[2]  # DeltaNet/eval -> repo root
+    root = Path(__file__).resolve().parents[1]  # evals/ -> repo root
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     return root

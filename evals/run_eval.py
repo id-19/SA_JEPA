@@ -1,20 +1,15 @@
-"""Toy eval runner: trains the linear-RNN arms (or a mock model) on the tasks here.
+"""Shared toy eval runner (tasks + train loop). Arms come from models_*.py.
 
 Usage:
-    .venv/bin/python run_eval.py --task all --mock
-    .venv/bin/python run_eval.py                      # same: all tasks, --mock off is ONLY
-                                                      # possible once models.py exists
-    .venv/bin/python run_eval.py --task sine,text_word --arm all
-    .venv/bin/python run_eval.py --task audio --audio path/to/file.flac
+    .venv/bin/python evals/run_eval.py --family deltanet --task sine --mock
+    .venv/bin/python evals/run_eval.py --family deltanet --task sine --arm la
+    .venv/bin/python evals/run_eval.py --family attention --task sine --arm vanilla
 
---task takes a comma-separated list and accepts 'all' (default): the four
-tasks sine, text_char, text_word, audio run in sequence, each printing its
-own overall header and summary table.
+--family is deltanet or attention. --task is a comma list or 'all'
+(sine, text_char, text_word, audio).
 
---mock runs a DUMMY RANDOM MODEL instead of the real arms, purely to prove
-the plumbing (task -> batching -> shift -> loss -> summary table) without
-models.py. With --mock, --steps defaults to 200 and a single 'mock' arm
-replaces the arm list.
+--mock runs a dummy model to prove the plumbing. With --mock, --steps
+defaults to 200 and a single 'mock' arm replaces the arm list.
 
 BATCHING: every pass, train and val, is batched. Training uses --batch
 (16); the final no-grad val pass uses the smaller --val-batch (8) so peak
@@ -37,7 +32,8 @@ import task_sine
 import task_text
 
 TASKS = ["sine", "text_char", "text_word", "audio"]
-ARMS = None  # imported from models.py in main(), only needed without --mock
+ARMS = None  # from models_deltanet / models_attention in main()
+ArmsModel = None
 
 
 class MockModel(torch.nn.Module):
@@ -86,11 +82,8 @@ class MockModel(torch.nn.Module):
 
 
 def build_model(args, arm, d_in, d_out, loss):
-    # thin adapter: ONLY this function changes when models.py is written
     if args.mock:
         return MockModel(d_in, d_out, loss)  # arm is meaningless for the mock
-    from models import ArmsModel
-
     return ArmsModel(arm, d_in, d_out, loss)
 
 
@@ -174,7 +167,7 @@ def run_task(args, task):
     y_val = d.get("val_y")
 
     print("=" * 64)
-    print(f"task={task} loss={loss} d_in={d['d_in']} d_out={d['d_out']} "
+    print(f"family={args.family} task={task} loss={loss} d_in={d['d_in']} d_out={d['d_out']} "
           f"train={tuple(d['train'].shape)} val={tuple(d['val'].shape)}")
     if "source" in d:  # audio only: which file actually got used
         extra = f" ({d['flac_seconds']} s)" if d.get("flac_seconds") else ""
@@ -220,17 +213,19 @@ def parse_tasks(arg):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Compare linear-RNN arms on toy tasks")
+    ap = argparse.ArgumentParser(description="Compare model-family arms on shared toy tasks")
+    ap.add_argument("--family", default="deltanet", choices=["deltanet", "attention"],
+                    help="which arms to train (deltanet or attention)")
     ap.add_argument("--task", default="all",
                     help=f"comma list or 'all' (= {','.join(TASKS)})")
     ap.add_argument("--arm", default="all",
-                    choices=["all", "la", "mamba2", "longhorn", "deltanet", "gdn"])
+                    help="one arm name, or 'all' (names depend on --family)")
     ap.add_argument("--audio", default=None,
                     help="path to an audio file; only used with task audio")
     ap.add_argument("--steps", type=int, default=None,
                     help="training steps (default: 200 with --mock, else 3000)")
     ap.add_argument("--mock", action="store_true",
-                    help="use MockModel instead of the real arms (no models.py needed)")
+                    help="use MockModel instead of the real arms")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--val-batch", type=int, default=8,
@@ -252,15 +247,13 @@ def main():
         sys.exit(1)
 
     if not args.mock:
-        # models.py is built separately (a human exercise, not written here)
-        global ARMS
-        try:
-            from models import ArmsModel, ARMS  # noqa: F401
-        except (ImportError, AttributeError) as e:
-            # AttributeError too: the bare models/ namespace stub currently
-            # in the repo has no ArmsModel, raising AttributeError not ImportError
-            print(f"models.py not found ({e}) - the arms are built separately.")
-            print("Create DeltaNet/eval/models.py first, or run with --mock.")
+        global ARMS, ArmsModel
+        if args.family == "attention":
+            from models_attention import ArmsModel, ARMS
+        else:
+            from models_deltanet import ArmsModel, ARMS
+        if args.arm != "all" and args.arm not in ARMS:
+            print(f"unknown arm {args.arm!r} for family {args.family}; valid: {ARMS} (or 'all')")
             sys.exit(1)
 
     t_suite = time.perf_counter()
