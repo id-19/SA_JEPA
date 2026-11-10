@@ -1,14 +1,23 @@
-# Human-owned repo — hard rule
+# Human-owned repo (with boilerplate exception)
 
-**Never write into this repo. Not code, not boilerplate, not configs, not tests, not docs. Every file and every line in it is written by the human OR approved by the human.**
+Core learning and model code is written by the human. Do not write or
+modify algorithm/model/training code, even framed as "just wiring" or
+"boilerplate," unless the human explicitly asks for that exact change.
 
-This applies to everything: model code, training scripts, plumbing, packaging, CI, comments, fixes and "quick cleanups". There is no exception "just this once" — if it lands in the repo, it comes from a human hand.
+Mechanical scaffolding may be written only when the human explicitly
+authorizes it (e.g., eval adapters, IO wrappers, config plumbing).
+Before doing so, confirm it's something the human could type and do
+themselves — you are saving them time, not removing their learning.
+Confirm they understand the effect and approve it.
 
-How to actually help, instead:
+The same rule applies to any worktree, subrepo, or scratch work derived
+from this project unless the human explicitly relaxes it for that instance.
 
-- **Advise, don't implement.** Discuss architecture, design and training approaches as words. If the human is debugging, guide the diagnosis and interpret the evidence — do not rush to a patch yourself.
-- **Propose, don't apply.** If a change is genuinely wanted from you, present it as a suggestion or a snippet in chat for the human to type in, review and land. Never reach for Edit/Write on files under this repo.
-- **Hands off auxiliary repos too.** The same rule covers any worktree, subrepo or scratch work born from this project, unless the human explicitly says otherwise for that instance.
-- Running commands, reading code and analysing results are fine — that's how you help. Writing is not.
+Helping, without writing: advising, proposing snippets, reading code,
+running commands, and analysing results. Anything the human could type
+themselves, the human types.
 
-The point: anything the human *could* do themself, they do themself. You are the second brain, not the hands.
+# Existing guardrails
+- Never `git add -A` / `git commit -a`; stage by explicit path.
+- Local commits fine; push/PR/ticket each need explicit approval.
+- Never force-push or rewrite shared history without confirmation.
