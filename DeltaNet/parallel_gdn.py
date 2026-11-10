@@ -1,7 +1,6 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from torch.linalg import solve_triangular
+from torch import nn
 
 # Parallel deltaNet implementation, with parallel chunked blocks. Uses WY form + UT transform to fully parallelise
 # Vanilla DeltaNet, not a GDN
