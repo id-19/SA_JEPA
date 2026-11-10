@@ -86,10 +86,14 @@ class ParallelGatedDeltaNet(nn.Module):
             # 1. Get D
             D = torch.sigmoid(torch.einsum('bsc,ck->bsk', input, self.W_b)) # (B, C, 1)
             # 2. Alpha, g and G
+            # Use log form because products underflow to zero, add clamps if it still breaks
             Alpha = torch.sigmoid(input @ self.W_a) # (B, C, D_input) @ (D_input) -> B, C
-            g = torch.cumprod(Alpha, dim=-1) # (B, C)
-            G = g.unsqueeze(dim=-1) / g.unsqueeze(dim=-2) # (B, C, 1) / (B, 1, C) -> B, C, C
+            log_alpha = torch.log(Alpha)
+            log_g = torch.cumsum(log_alpha, dim=-1)
+            g = torch.exp(log_g) # (B, C)
+            G = (log_g.unsqueeze(dim=-1) - log_g.unsqueeze(dim=-2)) # (B, C, 1) / (B, 1, C) -> B, C, C
             G = torch.tril(G) # B, C, C
+            G = torch.exp(G)
             # 3. W and U
             # W is same as before
             g_matrix = torch.tril(torch.einsum('bsk, btk->bst', K, K), diagonal=-1) # OG matrix named after Scandinavian guy
