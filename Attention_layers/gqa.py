@@ -15,15 +15,31 @@ class VanillaGQA(nn.Module):
         assert n_heads % grouping == 0, "Heads not diVisible into groups"
         self.KV_heads = n_heads // grouping
         # Weights
-        self.W_KV = nn.Linear(d_input, self.KV_heads * (hdim_qk + hdim_v))
+        self.W_K = nn.Linear(d_input, self.KV_heads * hdim_qk)
+        self.W_V = nn.Linear(d_input, self.KV_heads * hdim_v)
         self.W_Q = nn.Linear(d_input, n_heads * hdim_qk)
         self.W_o = nn.Linear(hdim_v * n_heads, d_output)
         # device
         self.device = 'mps'
 
+    def efficient_simple_forward(self, x):
+        # always causal
+        B,T,_ = x.shape
+        K = self.W_K(x)
+        V = self.W_V(x)
+        Q = self.W_Q(x)
+        Q = Q.view(B, T, self.KV_heads, self.grouping, self.hdim_qk).permute(0, 2, 3, 1, 4)
+        K = K.view(B, T, self.KV_heads, self.hdim_qk).permute(0, 2, 1, 3) # KV_heads = n_heads // grouping
+        V = V.view(B, T, self.KV_heads, self.hdim_v).permute(0, 2, 1, 3)
+        raw_scores = (torch.einsum('bngtk,bnsk->bngts', Q, K)/ (self.hdim_qk ** 0.5)).masked_fill(torch.tril(torch.ones((T, T))) == 0, float('-inf'))
+        attn = torch.einsum('bngts, bnsv->bngtv', F.softmax(raw_scores, dim=-1), V).permute(0, 3, 1, 2, 4).reshape(B, T, -1)
+        return self.W_o(attn) # (B, T, O)
+
+
     def forward(self, x, is_causal=True, use_flash = True):
         B,T,_ = x.shape
-        K,V = self.W_KV(x).split([self.hdim_qk * self.KV_heads, self.hdim_v * self.KV_heads], dim=-1)
+        K = self.W_K(x)
+        V = self.W_V(x)
         Q = self.W_Q(x)
         Q = Q.view(B,T, self.n_heads, self.hdim_qk)
         K = K.view(B,T, self.KV_heads, self.hdim_qk) # KV_heads = n_heads // grouping
@@ -54,8 +70,5 @@ if __name__ == '__main__':
     data = torch.randn((2,3,5))
     model = VanillaGQA(d_input = 5, d_output = 7, hdim_qk = 8, hdim_v = 13, grouping = 4, n_heads = 8)
     flash_outputs = model(data, use_flash=True)
-    einsum_outputs = model(data, use_flash=False)
-    print("For flash, shape of outputs is", flash_outputs.shape)
-    print("For einsum, shape of outputs is", einsum_outputs.shape)
-    assert flash_outputs.shape == einsum_outputs.shape, "Outputs have different shapes"
-    assert torch.allclose(flash_outputs, einsum_outputs, rtol=1e-3), f"Outputs are not the same. diff = {flash_outputs - einsum_outputs}"
+    eff_outs = model.efficient_simple_forward(data)
+    assert torch.allclose(flash_outputs, eff_outs, atol=1e-6), f"2!:Outputs are not the same. diff = {flash_outputs - eff_outs}"
