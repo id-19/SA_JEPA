@@ -1,4 +1,8 @@
-"""Attention family arms for the shared eval runner."""
+"""Attention family arms for the shared eval runner.
+
+vanilla is VanillaAttention (scaled-dot-product forward).
+gqa is VanillaGQA through efficient_simple_forward.
+"""
 
 import sys
 from pathlib import Path
@@ -9,7 +13,10 @@ if str(_root) not in sys.path:
 
 import torch.nn as nn
 
-ARMS = ["vanilla", "gqa", "mla"]
+from Attention_layers.gqa import VanillaGQA
+from Attention_layers.vanilla import VanillaAttention
+
+ARMS = ["vanilla", "gqa"]
 
 
 def _w(d_in, loss):
@@ -23,6 +30,27 @@ def _n_heads(d_model):
     return 1
 
 
+def _grouping(n_heads):
+    for g in (4, 2, 1):
+        if n_heads % g == 0:
+            return g
+    return 1
+
+
+class EfficientGQA(nn.Module):
+    """Runner calls forward(x). The timed path is efficient_simple_forward."""
+
+    def __init__(self, d_in, d_out, n_heads):
+        super().__init__()
+        head = d_in // n_heads
+        self.gqa = VanillaGQA(
+            d_in, d_out, head, head, n_heads, _grouping(n_heads),
+        )
+
+    def forward(self, x):
+        return self.gqa.efficient_simple_forward(x)
+
+
 class ArmsModel(nn.Module):
     def __init__(self, arm, d_in, d_out, loss):
         super().__init__()
@@ -30,17 +58,12 @@ class ArmsModel(nn.Module):
         w = _w(d_in, loss)
         n_heads = _n_heads(w)
         if arm == "vanilla":
-            from Attention_layers.vanilla import VanillaAttention
-            layer = VanillaAttention(w, n_heads)
+            # Block width stays w. self.out maps w -> d_out when the task is wider (CE).
+            self.net = VanillaAttention(w, w, w, n_heads)
         elif arm == "gqa":
-            from Attention_layers.gqa import GQA
-            layer = GQA(w, n_heads)
-        elif arm == "mla":
-            from Attention_layers.mla import MLA
-            layer = MLA(w, n_heads)
+            self.net = EfficientGQA(w, w, n_heads)
         else:
             raise ValueError(f"unknown arm: {arm}")
-        self.net = layer
         self.out = nn.Identity() if w == d_out else nn.Linear(w, d_out)
 
     def forward(self, x):

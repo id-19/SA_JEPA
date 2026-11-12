@@ -55,8 +55,14 @@ class VanillaGQA(nn.Module):
             return self.W_o(attn) #(B, T, O)
 
 if __name__ == '__main__':
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "evals"))
+    from flash_dispatch import sdpa_kernels
+
     data = torch.randn((2,3,5))
     model = VanillaGQA(d_input = 5, d_output = 7, hdim_qk = 11, hdim_v = 11, grouping = 4, n_heads = 8)
+    print(sdpa_kernels(lambda: model(data, use_flash=True)))
     flash_outputs = model(data, use_flash=True)
     eff_outs = model(data, use_flash=False)
     assert torch.allclose(flash_outputs, eff_outs, atol=1e-6), f"2!:Outputs are not the same. diff = {flash_outputs - eff_outs}"
