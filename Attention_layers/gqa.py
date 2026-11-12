@@ -62,7 +62,10 @@ if __name__ == '__main__':
 
     data = torch.randn((2,3,5))
     model = VanillaGQA(d_input = 5, d_output = 7, hdim_qk = 11, hdim_v = 11, grouping = 4, n_heads = 8)
-    print(sdpa_kernels(lambda: model(data, use_flash=True)))
+    print("cpu", sdpa_kernels(lambda: model(data, use_flash=True)))
     flash_outputs = model(data, use_flash=True)
     eff_outs = model(data, use_flash=False)
     assert torch.allclose(flash_outputs, eff_outs, atol=1e-6), f"2!:Outputs are not the same. diff = {flash_outputs - eff_outs}"
+    data = data.to("mps")
+    model = model.to("mps")
+    print("mps", sdpa_kernels(lambda: model(data, use_flash=True)))
