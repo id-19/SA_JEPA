@@ -21,7 +21,7 @@ Resolution order in make_data():
 Loading uses soundfile (torchaudio.load in this env routes through
 torchcodec, which cannot dlopen FFmpeg on this machine): sf.read ->
 torch tensor (1, N), sample rate passed on. The v0 pipeline
-(v0_model_try.data_pipeline_v0) is reused ONLY for the resample/mel/
+(v0_model_try.training.data_pipeline_v0) is reused ONLY for the resample/mel/
 normalise stages (cast_uniform -> get_log_mel -> get_normalised_log_mel),
 so the 16 kHz LibriSpeech clip is resampled to the 24 kHz target by the
 same code the v0 model trains against. Imports stay lazy and live inside
@@ -119,7 +119,7 @@ def resolve_audio():
 def make_data(audio_path=None, seed=0):
     # requires torch + torchaudio (v0_model_try builds a MelSpectrogram)
     _repo_root()
-    from v0_model_try.data_pipeline_v0 import (
+    from v0_model_try.training.data_pipeline_v0 import (
         cast_uniform,
         get_log_mel,
         get_normalised_log_mel,

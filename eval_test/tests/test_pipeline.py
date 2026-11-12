@@ -3,8 +3,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from v0_model_try.data_pipeline_v0 import preprocess_audio_full, get_dataloader
-from v0_model_try.data_pipeline_v0 import CLIP_SAMPLES, HOP_LENGTH, BATCH_SIZE, N_BINS 
+from v0_model_try.training.data_pipeline_v0 import preprocess_audio_full, get_dataloader
+from v0_model_try.training.data_pipeline_v0 import CLIP_SAMPLES, HOP_LENGTH, BATCH_SIZE, N_BINS 
 import torch
 
 
