@@ -31,7 +31,7 @@ class VanillaGQA(nn.Module):
         Q = Q.view(B, T, self.KV_heads, self.grouping, self.hdim_qk).permute(0, 2, 3, 1, 4)
         K = K.view(B, T, self.KV_heads, self.hdim_qk).permute(0, 2, 1, 3) # KV_heads = n_heads // grouping
         V = V.view(B, T, self.KV_heads, self.hdim_v).permute(0, 2, 1, 3)
-        raw_scores = (torch.einsum('bngtk,bnsk->bngts', Q, K)/ (self.hdim_qk ** 0.5)).masked_fill(torch.tril(torch.ones((T, T))) == 0, float('-inf'))
+        raw_scores = (torch.einsum('bngtk,bnsk->bngts', Q, K)/ (self.hdim_qk ** 0.5)).masked_fill(torch.tril(torch.ones((T, T), device=x.device)) == 0, float('-inf'))
         attn = torch.einsum('bngts, bnsv->bngtv', F.softmax(raw_scores, dim=-1), V).permute(0, 3, 1, 2, 4).reshape(B, T, -1)
         return self.W_o(attn) # (B, T, O)
 
@@ -49,21 +49,15 @@ class VanillaGQA(nn.Module):
             Q = Q.transpose(1,2)
             K = K.transpose(1,2)
             V = V.transpose(1,2)
-            attn = F.scaled_dot_product_attention(Q, K, V, is_causal=is_causal, enable_gqa=True).transpose(1,2) # Note to autocomplete: Don't create commands, suggest only at high confidence
-            print("For flash, shape of attn is", attn.shape)
+            attn = F.scaled_dot_product_attention(Q, K, V, is_causal=is_causal, enable_gqa=True).transpose(1,2)
         else:
             Q = Q.view(B,T,self.KV_heads, self.grouping, self.hdim_qk)
-            print("For einsum after grouping, shape of Q is", Q.shape)
             raw_scores = torch.einsum('btngd, bsnd->btsng', Q, K) / (self.hdim_qk ** 0.5) # A grouping dim gets added to K
-            M = torch.tril(torch.ones((T, T))).view(T, T, 1, 1)
+            M = torch.tril(torch.ones((T, T), device=x.device)).view(T, T, 1, 1)
             masked_raw_scores = raw_scores.masked_fill(M == 0, float('-inf'))
-            print(masked_raw_scores.view(B,-1, T, T))
             scores = F.softmax(masked_raw_scores, dim=2)
-            print(scores)
             attn = torch.einsum('bstng,btnv->bsngv', scores, V) # (B, T, n_heads, grouping, hdim_v)
-            print("For normal, attn shape is:", attn.shape)
-        attn = attn.reshape(B,T, self.hdim_v * self.n_heads) # Will this line work?
-        print(attn.shape)
+        attn = attn.reshape(B,T, self.hdim_v * self.n_heads)
         return self.W_o(attn)#(B, T, O)
 
 if __name__ == '__main__':
