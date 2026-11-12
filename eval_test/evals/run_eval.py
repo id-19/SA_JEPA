@@ -1,9 +1,9 @@
 """Shared toy eval runner (tasks + train loop). Arms come from models_*.py.
 
 Usage:
-    .venv/bin/python evals/run_eval.py --family deltanet --task sine --mock
-    .venv/bin/python evals/run_eval.py --family deltanet --task sine --arm la
-    .venv/bin/python evals/run_eval.py --family attention --task sine --arm vanilla
+    .venv/bin/python eval_test/evals/run_eval.py --family deltanet --task sine --mock
+    .venv/bin/python eval_test/evals/run_eval.py --family deltanet --task sine --arm la
+    .venv/bin/python eval_test/evals/run_eval.py --family attention --task sine --arm vanilla
 
 --family is deltanet or attention. --task is a comma list or 'all'
 (sine, text_char, text_word, audio).

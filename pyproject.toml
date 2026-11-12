@@ -21,5 +21,5 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["eval_test/tests"]
 addopts = ["--import-mode=importlib"]

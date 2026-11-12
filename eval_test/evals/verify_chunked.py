@@ -6,8 +6,7 @@ in either reference or chunked output, or on an allclose mismatch.
 
 Benchmark: time legacy_out vs forward on a fixed set of shapes/chunk sizes.
 
-Run from DeltaNet/:
-    python3 verify_chunked.py
+    python3 eval_test/evals/verify_chunked.py
 """
 
 import os
@@ -18,7 +17,7 @@ from pathlib import Path
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 torch_threads_set = False
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "DeltaNet"))
 
 import torch
 

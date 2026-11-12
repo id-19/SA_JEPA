@@ -6,7 +6,7 @@ from pathlib import Path
 import torch.nn as nn
 
 _evals = Path(__file__).resolve().parent
-_dn = _evals.parent / "DeltaNet"
+_dn = _evals.parents[1] / "DeltaNet"
 for p in (_evals, _dn):
     s = str(p)
     if s not in sys.path:

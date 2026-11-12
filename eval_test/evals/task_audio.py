@@ -26,8 +26,8 @@ normalise stages (cast_uniform -> get_log_mel -> get_normalised_log_mel),
 so the 16 kHz LibriSpeech clip is resampled to the 24 kHz target by the
 same code the v0 model trains against. Imports stay lazy and live inside
 the functions: they pull in torch + torchaudio, so this file should stay
-importable without them. v0_model_try sits two directories up, so we add
-the repo root to sys.path.
+importable without them. v0_model_try sits at the repo root, three
+directories up from this file, so we add the repo root to sys.path.
 """
 
 import sys
@@ -51,7 +51,7 @@ TARBALL_MEMBER = "LibriSpeech/dev-clean/2277/149896/2277-149896-0005.flac"
 
 
 def _repo_root():
-    root = Path(__file__).resolve().parents[1]  # evals/ -> repo root
+    root = Path(__file__).resolve().parents[2]  # eval_test/evals -> repo root
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     return root

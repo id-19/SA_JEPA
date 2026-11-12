@@ -2,16 +2,17 @@
 
 One table at the end. Times are ms per forward.
 
-    uv run evals/bench_gqa_audio.py
+    uv run eval_test/evals/bench_gqa_audio.py
 """
 
 import sys
 import time
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO))
-sys.path.insert(0, str(REPO / "evals"))
+sys.path.insert(0, str(HERE))
 
 import torch
 

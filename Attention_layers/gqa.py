@@ -57,7 +57,7 @@ class VanillaGQA(nn.Module):
 if __name__ == '__main__':
     import sys
     from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "evals"))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "eval_test" / "evals"))
     from flash_dispatch import sdpa_kernels
 
     data = torch.randn((2,3,5))
