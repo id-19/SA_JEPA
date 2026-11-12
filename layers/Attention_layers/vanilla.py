@@ -21,7 +21,7 @@ class VanillaAttention(nn.Module):
         Q = Q.view(B,T, self.n_heads, self.head_dim).transpose(1,2)
         K = K.view(B,T, self.n_heads, self.head_dim).transpose(1,2)
         V = V.view(B,T, self.n_heads, self.head_dim).transpose(1,2) # [B, N, T, d_head]
-        M = torch.tril(torch.ones((T, T))).view(1, 1, T, T)
+        M = torch.tril(torch.ones((T, T), device=x.device)).view(1, 1, T, T)
         scores_raw = torch.einsum('bnth, bnsh->bnts', Q, K) / (self.head_dim**0.5)# (B, N, T, T)
         # We don't sum up scores per head, we just concatenate later
         scores = scores_raw.masked_fill(M == 0, float('-inf'))

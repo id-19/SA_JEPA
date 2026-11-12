@@ -101,7 +101,10 @@ class ParallelKDA(nn.Module):
 
             # 4. Solve for W and U
             rhs = B.unsqueeze(dim=-1) * torch.cat((Kdash, V), dim=-1)  # (B, L, K+V)
-            solve = tri_solve(Lmat, rhs, upper=False, unitriangular=True)
+            # MPS triangular solve is fp32-only. Accumulate there, store in x's dtype.
+            solve = tri_solve(
+                Lmat.float(), rhs.float(), upper=False, unitriangular=True,
+            ).to(dtype=x.dtype)
             W, U = solve.split([self.D_qk, self.D_v], dim=-1)
 
             # 5. Scores

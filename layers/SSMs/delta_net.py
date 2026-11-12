@@ -39,7 +39,7 @@ class UnifiedDeltaNet(nn.Module):
         # Solve this equation you get(equivalent)
         # S_(t+1) = alpha * (I - beta * k_t^T * k_t) * S_t + beta * k_t * v_t
         B,T,C = x.shape
-        S = torch.zeros((B, self.d_qk, self.d_v))
+        S = torch.zeros((B, self.d_qk, self.d_v), device=x.device, dtype=x.dtype)
         output = []
         for t in range(T):
             input = x[:,t,:]
@@ -53,7 +53,7 @@ class UnifiedDeltaNet(nn.Module):
             beta = (torch.sigmoid(input @ self.W_b)).view(B,1,1) # So we can multiply cleanly by (B,K,K)
 
             # Find A
-            A = (torch.eye(self.d_qk).unsqueeze(dim=0) - beta * torch.einsum('bk,bs->bks', k, k))
+            A = (torch.eye(self.d_qk, device=x.device, dtype=x.dtype).unsqueeze(dim=0) - beta * torch.einsum('bk,bs->bks', k, k))
             if self.decay == 'scalar':
                 # alpha is scalar
                 A = alpha.view(B,1,1) * A # type:ignore

@@ -33,7 +33,7 @@ class ParallelDeltaNet(nn.Module):
         # Solve this equation you get(equivalent)
         # S_(t+1) = alpha * (I - beta * k_t^T * k_t) * S_t + beta * k_t * v_t
         bsize,T,_ = x.shape
-        S = torch.zeros((bsize, self.D_qk, self.D_v))
+        S = torch.zeros((bsize, self.D_qk, self.D_v), device=x.device, dtype=x.dtype)
         output = []
         for t in range(T):
             input = x[:,t,:]
@@ -45,7 +45,7 @@ class ParallelDeltaNet(nn.Module):
             beta = (torch.sigmoid(input @ self.W_b)).view(bsize,1,1) # So we can multiply cleanly by (B,K,K)
 
             # Find A
-            A = (torch.eye(self.D_qk).unsqueeze(dim=0) - beta * torch.einsum('bk,bs->bks', k, k))
+            A = (torch.eye(self.D_qk, device=x.device, dtype=x.dtype).unsqueeze(dim=0) - beta * torch.einsum('bk,bs->bks', k, k))
 
             # Find B
             B_in = beta * torch.einsum('bk,bv->bkv', k, v)
@@ -60,7 +60,7 @@ class ParallelDeltaNet(nn.Module):
     def forward(self, x, chunk_size = 32):
         # Some operations aren't very good for kernels, but just implement a parallel version rn
         bsize,T,_ = x.shape
-        S_in = torch.zeros((bsize, self.D_qk, self.D_v))
+        S_in = torch.zeros((bsize, self.D_qk, self.D_v), device=x.device, dtype=x.dtype)
         outputs = []
         for cs in range(0, T, chunk_size):
             input = x[:, cs:cs+chunk_size]
@@ -73,15 +73,18 @@ class ParallelDeltaNet(nn.Module):
             D = torch.sigmoid(torch.einsum('bsc,ck->bsk', input, self.W_b)) # (B, C, 1)
             # 2. Get U and W
             g_matrix = torch.einsum('bsk, btk->bst', K, K) # OG matrix named after Scandinavian guy
-            A = torch.eye(lc) + torch.tril(torch.einsum('bs,bst->bst', D.squeeze(dim=-1), g_matrix), diagonal=-1)
+            A = torch.eye(lc, device=x.device, dtype=x.dtype) + torch.tril(torch.einsum('bs,bst->bst', D.squeeze(dim=-1), g_matrix), diagonal=-1)
             # K for W, V for U - both mult by D
             RHS = torch.cat([D * K, D * V], dim=-1) # (B, C, K + V) Beta being (B, C, 1) broadcasts perfectly
             # Don't be lazy, solve the triangular
-            solve = solve_triangular(A, RHS, upper=False, unitriangular=True)
+            # MPS triangular solve is fp32-only. Accumulate there, store in x's dtype.
+            solve = solve_triangular(
+                A.float(), RHS.float(), upper=False, unitriangular=True,
+            ).to(dtype=x.dtype)
             W,U = solve.split([self.D_qk, self.D_v], dim=-1)
 
             # 4. Get output projection!
-            M = torch.tril(torch.ones((lc, lc)))
+            M = torch.tril(torch.ones((lc, lc), device=x.device, dtype=x.dtype))
             carry = torch.einsum('bsq,bqv->bsv', Q, S_in)
             intra_chunk_scores = (M * (Q @ K.transpose(-1,-2))) # (B, C, C)
             value_error = (U - W @ S_in) # (B, C, V)

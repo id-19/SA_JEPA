@@ -35,7 +35,7 @@ class ParallelGatedDeltaNet(nn.Module):
         # Solve this equation you get(equivalent)
         # S_(t+1) = alpha * (I - beta * k_t^T * k_t) * S_t + beta * k_t * v_t
         B,T,C = x.shape
-        S = torch.zeros((B, self.D_qk, self.D_v))
+        S = torch.zeros((B, self.D_qk, self.D_v), device=x.device, dtype=x.dtype)
         self.decay = "scalar"
         output = []
         for t in range(T):
@@ -50,7 +50,7 @@ class ParallelGatedDeltaNet(nn.Module):
             beta = (torch.sigmoid(input @ self.W_b)).view(B,1,1) # So we can multiply cleanly by (B,K,K)
 
             # Find A
-            A = (torch.eye(self.D_qk).unsqueeze(dim=0) - beta * torch.einsum('bk,bs->bks', k, k))
+            A = (torch.eye(self.D_qk, device=x.device, dtype=x.dtype).unsqueeze(dim=0) - beta * torch.einsum('bk,bs->bks', k, k))
             if self.decay == 'scalar':
                 # alpha is scalar
                 A = alpha.view(B,1,1) * A # type:ignore
@@ -73,7 +73,7 @@ class ParallelGatedDeltaNet(nn.Module):
     def forward(self, x, chunk_size = 32):
         # Some operations aren't very good for kernels, but just implement a parallel version rn
         bsize,T,_ = x.shape
-        S_in = torch.zeros((bsize, self.D_qk, self.D_v))
+        S_in = torch.zeros((bsize, self.D_qk, self.D_v), device=x.device, dtype=x.dtype)
         outputs = []
         for cs in range(0, T, chunk_size):
             input = x[:, cs:cs+chunk_size]
@@ -96,12 +96,17 @@ class ParallelGatedDeltaNet(nn.Module):
             # 3. W and U
             # W is same as before
             g_matrix = torch.tril(torch.einsum('bsk, btk->bst', K, K), diagonal=-1) # OG matrix named after Scandinavian guy
-            A_w = torch.eye(lc) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), g_matrix)
-            W = torch.linalg.solve_triangular(A_w, D * K, upper=False, unitriangular=True)
+            A_w = torch.eye(lc, device=x.device, dtype=x.dtype) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), g_matrix)
+            # MPS triangular solve is fp32-only. Accumulate there, store in x's dtype.
+            W = torch.linalg.solve_triangular(
+                A_w.float(), (D * K).float(), upper=False, unitriangular=True,
+            ).to(dtype=x.dtype)
             # U is different
             decayeD_G = G * g_matrix # Both are (C,C)
-            A_u = torch.eye(lc) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), decayeD_G)
-            U = torch.linalg.solve_triangular(A_u, D * V, upper=False, unitriangular=True)
+            A_u = torch.eye(lc, device=x.device, dtype=x.dtype) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), decayeD_G)
+            U = torch.linalg.solve_triangular(
+                A_u.float(), (D * V).float(), upper=False, unitriangular=True,
+            ).to(dtype=x.dtype)
             # 4. Output projection
             E = U - torch.einsum('bck,bkv->bcv', g.unsqueeze(-1) * W, S_in)
             chunk_scores = G * torch.tril(torch.einsum('bck,bsk->bcs', Q, K))
