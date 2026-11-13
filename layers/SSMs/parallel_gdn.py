@@ -24,7 +24,7 @@ class ParallelGatedDeltaNet(nn.Module):
         self.W_o = nn.Parameter(torch.randn((D_v, D_output)) * (1.0 / (D_v ** 0.5)))
 
         # Write strength - beta(common to all)
-        self.W_b = nn.Parameter(torch.randn((D_input, 1))) # Takes (B,T,C) -> (B,T), which is then broadcast
+        self.W_b = nn.Parameter(torch.randn((D_input, 1)) / (D_input ** 0.5)) # Takes (B,T,C) -> (B,T), which is then broadcast
 
         # Alpha for decay
         self.W_a = nn.Parameter(torch.randn((D_input)) / (D_input ** 0.5))
