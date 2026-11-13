@@ -102,8 +102,9 @@ class ParallelKDA(nn.Module):
             # 4. Solve for W and U
             rhs = B.unsqueeze(dim=-1) * torch.cat((Kdash, V), dim=-1)  # (B, L, K+V)
             # MPS triangular solve is fp32-only. Accumulate there, store in x's dtype.
+            cast_type = torch.promote_types(x.dtype, torch.float32)
             solve = tri_solve(
-                Lmat.float(), rhs.float(), upper=False, unitriangular=True,
+                Lmat.to(cast_type), rhs.to(cast_type), upper=False, unitriangular=True,
             ).to(dtype=x.dtype)
             W, U = solve.split([self.D_qk, self.D_v], dim=-1)
 
@@ -127,6 +128,28 @@ class ParallelKDA(nn.Module):
         return torch.cat(outputs, dim=1)
 
 
+def grad_check():
+    D_output = 8
+    alltype = torch.float64
+    x = torch.randn((1,64,64), dtype=alltype, requires_grad=True)
+    model = ParallelKDA(D_input = 64, D_output = D_output, D_qk = 4, D_v = 4).to(alltype)
+    get_grads = lambda :[x.grad for x in model.parameters()]
+    random_output_weights = torch.randn((1,64, D_output), dtype=alltype)
+    (model(x, chunk_size = 8) * random_output_weights).view(-1).sum().backward()
+    grads1 = get_grads()
+    model.zero_grad()
+    (model.legacy_out(x) * random_output_weights).view(-1).sum().backward()
+    grads2 = get_grads()
+    # Manual
+    for i in range(len(grads1)):
+        assert torch.allclose(grads1[i],grads2[i], rtol=1e-4, atol=1e-10) # type:ignore
+    # Now, for the grad_check
+    from torch.autograd.gradcheck import gradcheck
+    forward = lambda x: model(x)
+    gradcheck(forward, x)
+    print("gradcheck passed!")
+
+
 if __name__ == '__main__':
     import time
     data = torch.randn(2, 3, 5)
@@ -139,3 +162,6 @@ if __name__ == '__main__':
     print(f"time taken by sequential: {t3-t2}, time taken by parallel chunked: {t2 - t1}, speedup: {(t3-t2)/(t2-t1)}")
     print(outputs.shape, ref_outs.shape)
     print(torch.allclose(outputs, ref_outs))
+
+    ### Grad check
+    grad_check()
