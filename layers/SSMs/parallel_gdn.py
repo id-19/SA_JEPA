@@ -70,7 +70,7 @@ class ParallelGatedDeltaNet(nn.Module):
             output.append(O @ self.W_o)
         return torch.stack(output, dim=1)
 
-    def forward(self, x, chunk_size = 32):
+    def forward(self, x, chunk_size = 32, is_grad_check = False):
         # Some operations aren't very good for kernels, but just implement a parallel version rn
         bsize,T,_ = x.shape
         S_in = torch.zeros((bsize, self.D_qk, self.D_v), device=x.device, dtype=x.dtype)
@@ -97,15 +97,19 @@ class ParallelGatedDeltaNet(nn.Module):
             # W is same as before
             g_matrix = torch.tril(torch.einsum('bsk, btk->bst', K, K), diagonal=-1) # OG matrix named after Scandinavian guy
             A_w = torch.eye(lc, device=x.device, dtype=x.dtype) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), g_matrix)
+            if is_grad_check:
+                cast_type = torch.float64
+            else:
+                cast_type = torch.float32
             # MPS triangular solve is fp32-only. Accumulate there, store in x's dtype.
             W = torch.linalg.solve_triangular(
-                A_w.float(), (D * K).float(), upper=False, unitriangular=True,
+                A_w.to(cast_type), (D * K).to(cast_type), upper=False, unitriangular=True,
             ).to(dtype=x.dtype)
             # U is different
-            decayeD_G = G * g_matrix # Both are (C,C)
-            A_u = torch.eye(lc, device=x.device, dtype=x.dtype) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), decayeD_G)
+            decayed_G = G * g_matrix # Both are (C,C)
+            A_u = torch.eye(lc, device=x.device, dtype=x.dtype) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), decayed_G)
             U = torch.linalg.solve_triangular(
-                A_u.float(), (D * V).float(), upper=False, unitriangular=True,
+                A_u.to(cast_type), (D * V).to(cast_type), upper=False, unitriangular=True,
             ).to(dtype=x.dtype)
             # 4. Output projection
             E = U - torch.einsum('bck,bkv->bcv', g.unsqueeze(-1) * W, S_in)
@@ -122,15 +126,43 @@ class ParallelGatedDeltaNet(nn.Module):
         return torch.cat(outputs, dim=1)
 
 
+    def grad_check(self, o1:torch.Tensor, o2:torch.Tensor):
+        from torch.autograd.gradcheck import gradcheck
+        l1 = o1.view(-1).sum()
+        l1.backward()
+        params = [i for i in self.parameters()]
+        gradients1 = [x.grad for x in params]
+        for param in self.parameters():
+            assert type(param) == nn.Parameter
+            param.grad = None
+        l2 = o2.view(-1).sum()
+        l2.backward()
+        gradients2 = [x.grad for x in params]
+        for i in range(len(gradients1)):
+            assert gradients1[i] is not None and gradients2[i] is not None
+            assert torch.allclose(gradients1[i], gradients2[i], atol=1e-4, rtol=1e-3) # type:ignore
+            print(i,torch.abs(gradients1[i] - gradients2[i]).max() , "Yay!") # type:ignore
+        print("Gradients match")
+        ## Do gradcheck
+        gradcheck(get_forward(), (torch.randn((1, 3, 5), dtype=torch.float64, requires_grad=True )))
+        print("Gradcheck passed")
+
+def get_forward():
+    D_net = ParallelGatedDeltaNet(D_input = 5, D_output = 32, D_qk = 32, D_v = 32).to(torch.float64)
+    return lambda data: (D_net(data, is_grad_check=True), D_net.legacy_out(data))
+
 if __name__ == '__main__':
     import time
-    data = torch.randn(32, 1024*8, 128)
+    data = torch.randn(4, 64, 128)
     D_net = ParallelGatedDeltaNet(D_input = 128, D_output = 32, D_qk = 32, D_v = 32)
     t1 = time.time()
     outputs = D_net(data)
     t2 = time.time()
     ref_outs = D_net.legacy_out(data)
     t3 = time.time()
-    print(f"time taken by sequential: {t3-t2}, time taken by parallel chunked: {t2 - t1}, speedup: {(t3-t2)/(t2-t1)}")
-    print(outputs.shape, ref_outs.shape)
-    print(torch.allclose(outputs, ref_outs))
+    # print(f"time taken by sequential: {t3-t2}, time taken by parallel chunked: {t2 - t1}, speedup: {(t3-t2)/(t2-t1)}")
+    # print(outputs.shape, ref_outs.shape)
+    # print(torch.allclose(outputs, ref_outs, atol=1e-4, rtol=1e-3), torch.abs(outputs-ref_outs).max())
+
+    # grad
+    D_net.grad_check(outputs, ref_outs)
