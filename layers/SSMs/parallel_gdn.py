@@ -27,7 +27,7 @@ class ParallelGatedDeltaNet(nn.Module):
         self.W_b = nn.Parameter(torch.randn((D_input, 1))) # Takes (B,T,C) -> (B,T), which is then broadcast
 
         # Alpha for decay
-        self.W_a = nn.Parameter(torch.randn((D_input)))
+        self.W_a = nn.Parameter(torch.randn((D_input)) / (D_input ** 0.5))
 
     def legacy_out(self, x):
         # S_t = alpha * S_(t-1) + beta * k_t * Error  // Write the error to correct address, (K) @ (V)-> (K, V) correct
@@ -72,6 +72,11 @@ class ParallelGatedDeltaNet(nn.Module):
 
     def forward(self, x, chunk_size = 32):
         # Some operations aren't very good for kernels, but just implement a parallel version rn
+        # Accumulate in at least fp32 (fp64 stays fp64 for gradcheck); cast back on the way out
+        out_dtype = x.dtype
+        cdtype = torch.promote_types(x.dtype, torch.float32)
+        x = x.to(cdtype)
+        W_q, W_k, W_v, W_b, W_a, W_o = (p.to(cdtype) for p in (self.W_q, self.W_k, self.W_v, self.W_b, self.W_a, self.W_o))
         bsize,T,_ = x.shape
         S_in = torch.zeros((bsize, self.D_qk, self.D_v), device=x.device, dtype=x.dtype)
         outputs = []
@@ -79,35 +84,30 @@ class ParallelGatedDeltaNet(nn.Module):
             input = x[:, cs:cs+chunk_size]
             lc = input.shape[1]
             # 0. q,k,v
-            Q = F.normalize(torch.einsum('bsc,cq->bsq', input, self.W_q), dim=-1)
-            K = F.normalize(torch.einsum('bsc,ck->bsk', input, self.W_k), dim=-1)
-            V = torch.einsum('bsc,cv->bsv', input, self.W_v)
+            Q = F.normalize(torch.einsum('bsc,cq->bsq', input, W_q), dim=-1)
+            K = F.normalize(torch.einsum('bsc,ck->bsk', input, W_k), dim=-1)
+            V = torch.einsum('bsc,cv->bsv', input, W_v)
             # 1. Get D
-            D = torch.sigmoid(torch.einsum('bsc,ck->bsk', input, self.W_b)) # (B, C, 1)
+            D = torch.sigmoid(torch.einsum('bsc,ck->bsk', input, W_b)) # (B, C, 1)
             # 2. Alpha, g and G
             # Use log form because products underflow to zero, add clamps if it still breaks
-            Alpha = torch.sigmoid(input @ self.W_a) # (B, C, D_input) @ (D_input) -> B, C
-            log_alpha = torch.log(Alpha)
+            Alpha = input @ W_a # (B, C, D_input) @ (D_input) -> B, C
+            log_alpha = torch.nn.functional.logsigmoid(Alpha)
             log_g = torch.cumsum(log_alpha, dim=-1)
             g = torch.exp(log_g) # (B, C)
             G = (log_g.unsqueeze(dim=-1) - log_g.unsqueeze(dim=-2)) # (B, C, 1) / (B, 1, C) -> B, C, C
             G = torch.tril(G) # B, C, C
-            G = torch.exp(G)
+            G = torch.exp(G.clamp(-88.0, 88.0))
             # 3. W and U
             # W is same as before
             g_matrix = torch.tril(torch.einsum('bsk, btk->bst', K, K), diagonal=-1) # OG matrix named after Scandinavian guy
             A_w = torch.eye(lc, device=x.device, dtype=x.dtype) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), g_matrix)
-            # MPS triangular solve is fp32-only. Accumulate there, store in x's dtype.
-            cast_type = torch.promote_types(x.dtype, torch.float32)
-            W = torch.linalg.solve_triangular(
-                A_w.to(cast_type), (D * K).to(cast_type), upper=False, unitriangular=True,
-            ).to(dtype=x.dtype)
+            # MPS triangular solve is fp32-only; x is already at least fp32 here
+            W = torch.linalg.solve_triangular(A_w, D * K, upper=False, unitriangular=True)
             # U is different
             decayed_G = G * g_matrix # Both are (C,C)
             A_u = torch.eye(lc, device=x.device, dtype=x.dtype) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), decayed_G)
-            U = torch.linalg.solve_triangular(
-                A_u.to(cast_type), (D * V).to(cast_type), upper=False, unitriangular=True,
-            ).to(dtype=x.dtype)
+            U = torch.linalg.solve_triangular(A_u, D * V, upper=False, unitriangular=True)
             # 4. Output projection
             E = U - torch.einsum('bck,bkv->bcv', g.unsqueeze(-1) * W, S_in)
             chunk_scores = G * torch.tril(torch.einsum('bck,bsk->bcs', Q, K))
@@ -118,9 +118,9 @@ class ParallelGatedDeltaNet(nn.Module):
             S_in = g[:, -1].view(bsize, 1, 1) * S_in + torch.einsum('bsk, bsv->bkv',K, E_carry)
 
             # Append to outputs
-            outputs.append(torch.einsum('bcv,vo->bco', O, self.W_o))
+            outputs.append(torch.einsum('bcv,vo->bco', O, W_o))
 
-        return torch.cat(outputs, dim=1)
+        return torch.cat(outputs, dim=1).to(out_dtype)
 
 
 def grad_check():
@@ -128,11 +128,12 @@ def grad_check():
     alltype = torch.float64
     x = torch.randn((1,64,64), dtype=alltype, requires_grad=True)
     model = ParallelGatedDeltaNet(D_input = 64, D_output = D_output, D_qk = 4, D_v = 4).to(alltype)
-    get_grads = lambda :[x.grad for x in model.parameters()]
+    get_grads = lambda :[p.grad for p in [x, *model.parameters()]] # input grad too
     random_output_weights = torch.randn((1,64, D_output), dtype=alltype)
     (model(x, chunk_size = 8) * random_output_weights).view(-1).sum().backward()
     grads1 = get_grads()
     model.zero_grad()
+    x.grad = None
     (model.legacy_out(x) * random_output_weights).view(-1).sum().backward()
     grads2 = get_grads()
     # Manual
@@ -145,18 +146,20 @@ def grad_check():
     gradcheck(forward, x)
     print("gradcheck passed!")
 
-if __name__ == '__main__':
-    import time
-    data = torch.randn(4, 64, 128)
-    D_net = ParallelGatedDeltaNet(D_input = 128, D_output = 32, D_qk = 32, D_v = 32)
-    t1 = time.time()
-    outputs = D_net(data)
-    t2 = time.time()
-    ref_outs = D_net.legacy_out(data)
-    t3 = time.time()
-    # print(f"time taken by sequential: {t3-t2}, time taken by parallel chunked: {t2 - t1}, speedup: {(t3-t2)/(t2-t1)}")
-    # print(outputs.shape, ref_outs.shape)
-    # print(torch.allclose(outputs, ref_outs, atol=1e-4, rtol=1e-3), torch.abs(outputs-ref_outs).max())
+def finite_check(T = 4096, D_input = 1024, trials = 3):
+    # fp32 gradients stay finite over long sequences (ID1-279). Large D_input is the case that broke log(sigmoid)
+    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    D_output = 64
+    model = ParallelGatedDeltaNet(D_input = D_input, D_output = D_output, D_qk = 128, D_v = 128).to(device)
+    for _ in range(trials):
+        x = torch.randn((2, T, D_input), device=device, requires_grad=True)
+        random_output_weights = torch.randn((2, T, D_output), device=device)
+        (model(x) * random_output_weights).view(-1).sum().backward()
+        for p in [x, *model.parameters()]:
+            assert torch.isfinite(p.grad).all() # type:ignore
+            p.grad = None
+    print(f"fp32 grads finite at T={T} on {device}")
 
-    # grad
+if __name__ == '__main__':
     grad_check()
+    finite_check()

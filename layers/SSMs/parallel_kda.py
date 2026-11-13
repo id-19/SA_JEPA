@@ -70,6 +70,11 @@ class ParallelKDA(nn.Module):
         # Numerically stable chunked parallel form.
         # Decay ratios are computed as exp(clamped log-differences) instead of
         # dividing by a possibly underflowed-to-zero cumulative decay D.
+        # Accumulate in at least fp32 (fp64 stays fp64 for gradcheck); cast back on the way out
+        out_dtype = x.dtype
+        cdtype = torch.promote_types(x.dtype, torch.float32)
+        x = x.to(cdtype)
+        W_q, W_k, W_v, W_b, W_a, W_o = (p.to(cdtype) for p in (self.W_q, self.W_k, self.W_v, self.W_b, self.W_a, self.W_o))
         bsize,T,_ = x.shape
         S_in = torch.zeros((bsize, self.D_qk, self.D_v), device=x.device, dtype=x.dtype)
         outputs = []
@@ -77,13 +82,13 @@ class ParallelKDA(nn.Module):
             input = x[:, cs:cs+chunk_size]
             lc = input.shape[1]
             # 0. q,k,v
-            Qraw = Fn.normalize(torch.einsum('bsc,cq->bsq', input, self.W_q), dim=-1)
-            K = Fn.normalize(torch.einsum('bsc,ck->bsk', input, self.W_k), dim=-1)
-            V = torch.einsum('bsc,cv->bsv', input, self.W_v)
+            Qraw = Fn.normalize(torch.einsum('bsc,cq->bsq', input, W_q), dim=-1)
+            K = Fn.normalize(torch.einsum('bsc,ck->bsk', input, W_k), dim=-1)
+            V = torch.einsum('bsc,cv->bsv', input, W_v)
             # 1. B
-            B = torch.sigmoid(input @ self.W_b)  # (B, L)
+            B = torch.sigmoid(input @ W_b)  # (B, L)
             # 2. Alpha / cumulative decay in log space
-            raw_alpha = input @ self.W_a  # (B, L, K)
+            raw_alpha = input @ W_a  # (B, L, K)
             log_alpha = Fn.logsigmoid(raw_alpha)
             log_d = torch.cumsum(log_alpha, dim=1)  # (B, L, K)
             D = torch.exp(log_d.clamp(min=-88.0))  # (B, L, K)
@@ -101,11 +106,8 @@ class ParallelKDA(nn.Module):
 
             # 4. Solve for W and U
             rhs = B.unsqueeze(dim=-1) * torch.cat((Kdash, V), dim=-1)  # (B, L, K+V)
-            # MPS triangular solve is fp32-only. Accumulate there, store in x's dtype.
-            cast_type = torch.promote_types(x.dtype, torch.float32)
-            solve = tri_solve(
-                Lmat.to(cast_type), rhs.to(cast_type), upper=False, unitriangular=True,
-            ).to(dtype=x.dtype)
+            # MPS triangular solve is fp32-only; x is already at least fp32 here
+            solve = tri_solve(Lmat, rhs, upper=False, unitriangular=True)
             W, U = solve.split([self.D_qk, self.D_v], dim=-1)
 
             # 5. Scores
@@ -123,9 +125,9 @@ class ParallelKDA(nn.Module):
             S_in = D[:, -1, :].view(bsize, self.D_qk, 1) * S_in + torch.einsum('blk,blv->bkv', K * w, E)
 
             # Append output
-            outputs.append(torch.einsum('bcv,vo->bco', O, self.W_o))
+            outputs.append(torch.einsum('bcv,vo->bco', O, W_o))
 
-        return torch.cat(outputs, dim=1)
+        return torch.cat(outputs, dim=1).to(out_dtype)
 
 
 def grad_check():
@@ -133,11 +135,12 @@ def grad_check():
     alltype = torch.float64
     x = torch.randn((1,64,64), dtype=alltype, requires_grad=True)
     model = ParallelKDA(D_input = 64, D_output = D_output, D_qk = 4, D_v = 4).to(alltype)
-    get_grads = lambda :[x.grad for x in model.parameters()]
+    get_grads = lambda :[p.grad for p in [x, *model.parameters()]] # input grad too
     random_output_weights = torch.randn((1,64, D_output), dtype=alltype)
     (model(x, chunk_size = 8) * random_output_weights).view(-1).sum().backward()
     grads1 = get_grads()
     model.zero_grad()
+    x.grad = None
     (model.legacy_out(x) * random_output_weights).view(-1).sum().backward()
     grads2 = get_grads()
     # Manual
@@ -150,18 +153,21 @@ def grad_check():
     print("gradcheck passed!")
 
 
-if __name__ == '__main__':
-    import time
-    data = torch.randn(2, 3, 5)
-    D_net = ParallelKDA(D_input=5, D_output=7, D_qk=11, D_v=13)
-    t1 = time.time()
-    outputs = D_net(data)
-    t2 = time.time()
-    ref_outs = D_net.legacy_out(data)
-    t3 = time.time()
-    print(f"time taken by sequential: {t3-t2}, time taken by parallel chunked: {t2 - t1}, speedup: {(t3-t2)/(t2-t1)}")
-    print(outputs.shape, ref_outs.shape)
-    print(torch.allclose(outputs, ref_outs))
+def finite_check(T = 4096, D_input = 1024, trials = 3):
+    # fp32 gradients stay finite over long sequences (ID1-279)
+    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    D_output = 64
+    model = ParallelKDA(D_input = D_input, D_output = D_output, D_qk = 128, D_v = 128).to(device)
+    for _ in range(trials):
+        x = torch.randn((2, T, D_input), device=device, requires_grad=True)
+        random_output_weights = torch.randn((2, T, D_output), device=device)
+        (model(x) * random_output_weights).view(-1).sum().backward()
+        for p in [x, *model.parameters()]:
+            assert torch.isfinite(p.grad).all() # type:ignore
+            p.grad = None
+    print(f"fp32 grads finite at T={T} on {device}")
 
-    ### Grad check
+
+if __name__ == '__main__':
     grad_check()
+    finite_check()
