@@ -149,7 +149,7 @@ class ParallelGatedDeltaNet(nn.Module):
 
 def get_forward():
     D_net = ParallelGatedDeltaNet(D_input = 5, D_output = 32, D_qk = 32, D_v = 32).to(torch.float64)
-    return lambda data: (D_net(data, is_grad_check=True), D_net.legacy_out(data))
+    return lambda data: D_net(data, is_grad_check=True)
 
 if __name__ == '__main__':
     import time
