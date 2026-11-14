@@ -31,9 +31,9 @@ class MultiHeadParallelKDA(nn.Module):
         self.W_v = nn.Parameter(torch.randn((D_input, D_v)) * (1.0 / (D_input ** 0.5)))
 
         # Initialise convs
-        self.Q_conv = nn.Conv1d(D_qk, D_qk, groups=D_qk, kernel_size=kernel_size)
-        self.K_conv = nn.Conv1d(D_qk, D_qk, groups=D_qk, kernel_size=kernel_size)
-        self.V_conv = nn.Conv1d(D_v, D_v, groups=D_v, kernel_size=kernel_size)
+        self.Q_conv = nn.Conv1d(D_qk, D_qk, groups=D_qk, kernel_size=kernel_size, bias=False)
+        self.K_conv = nn.Conv1d(D_qk, D_qk, groups=D_qk, kernel_size=kernel_size, bias=False)
+        self.V_conv = nn.Conv1d(D_v, D_v, groups=D_v, kernel_size=kernel_size, bias=False)
 
         # SiLU
         self.silu = nn.SiLU()
