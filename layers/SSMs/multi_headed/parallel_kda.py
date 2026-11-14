@@ -108,10 +108,10 @@ class MultiHeadParallelKDA(nn.Module):
         # print("q dims after messery:", q.shape)
         k = Fn.pad(k, (padding_needed, 0))
         v = Fn.pad(v, (padding_needed, 0))
-        # Get carry(its okay if you get padding on the left end)
-        q_conv_carry = q[:, :, -self.kernel_size + 1:]
-        k_conv_carry = k[:, :, -self.kernel_size + 1:]
-        v_conv_carry = v[:, :, -self.kernel_size + 1:]
+        # Get carry
+        q_conv_carry = q[:, :, T:]
+        k_conv_carry = k[:, :, T:]
+        v_conv_carry = v[:, :, T:]
         # Apply conv
         q = self.Q_conv(q)
         k = self.K_conv(k)
