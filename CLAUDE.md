@@ -9,13 +9,35 @@
 
 # Human-owned repo
 
-The main constraint: The human must learn and be kept upto date with the concepts/ideas used in this repo. To speak even more practically, the human must be capable, given sufficient time, of implementing what is written in the repo independently.
-While an AI agent may write code, or the repo may re-use good pre-built modules. The human must do the work himself and learn it, with the goal of effectively contributing to the work, instead of being a bystander who doesn't understand what's happening in the repo.
-A practical workflow template:
-1. A new concept or idea is discussed by the AI and human.
-2. The basic concept or idea is thrashed out and both agent and human get clarity
-3. The human implements the concept or idea, and learns the intricacies of it. Ideally, many things are made clear here, and valuable info is learned in the process of human implementation. If useful insight, questions or insight are not gained out of this step, it should be removed.
-4. The agent and human either work to re-use existing SOTA work, or they build something needed themselves.
+The main constraint: The human must learn and be kept upto date with the concepts/ideas used in this repo. To speak even more practically, the human must be capable, given sufficient time, of implementing what is written in the repo independently. Sufficient time means 100x or 200x the time an AI took, without AI assistance beyond small autocomplete or GPT-4 level help with implementation. At the same time, model development must not move at pre-AI human pace.
+While an AI agent may write code, or the repo may re-use good pre-built modules. The human owns the design, the understanding and the judgment of results, with the goal of effectively contributing to the work, instead of being a bystander who doesn't understand what's happening in the repo.
+
+The workflow (changed 14 Nov 2026: the human used to implement everything by hand, and found that hand-building a second mechanical variation, like a head axis on KDA after doing it on GDN, taught nothing new). It was designed by the AI at the human's request and is expected to change as the human learns.
+
+Who writes a piece depends on the stage of the skill it needs, and the stage moves over time:
+- Stage 1, new. The human has never done this. He hand-builds the smallest version of it, even when it is mechanical, because he genuinely needs to learn it.
+- Stage 2, done once. An agent builds it. The human writes the spec before and passes a check after.
+- Stage 3, proven. The human has passed checks on it without a miss. An agent builds it and the human looks at the result.
+- A missed check moves the skill down one stage.
+- A piece that fails silently, where wrong code still trains (losses, gradient cuts, masking, causality, readouts), never goes past stage 2.
+- Plumbing that is not about the model and fails loudly (file formats, logging, checkpoint files) starts at stage 3.
+The skill ledger, with the stage of each skill, is in docs_stuff/actual_docs/BUILD_v0.md.
+
+The steps for one piece:
+1. Design (human, with the AI arguing). A new concept or idea is discussed and thrashed out until both have clarity. The human decides.
+2. Spec (human). Before any code, the human writes what the piece does and the invariants that would prove it right.
+3. Build (human at stage 1, an agent otherwise, a smaller model where the work is mechanical), or re-use existing SOTA work. Agents may run ahead of the human. Every agent-built piece comes with a slow, obviously correct version and a test that the fast one equals it.
+4. Check (human). The human catches up behind the AI and tries to find what is wrong: a quiz with predictions that get run, or a hunt for a planted bug. Nothing gets a paid run until its check has passed.
+5. Judge (human). Predictions are written before a run. The human reads the readouts and makes the call.
+
+Every ticket, check and piece of work handed to the human opens with three things, in the simplest language possible, so he goes in knowing what he needs to get out of it:
+- What he should be able to do after it.
+- Why he needs that.
+- Exactly what he does, as numbered steps with file paths, commands and the exact words to tell an agent. And what he does not do.
+
+The 100x to 200x constraint is measured, not assumed: BUILD_v0.md keeps the AI's time for each agent-built piece next to the human's budget and the evidence that he could do it. A piece that fails the test stays out of the model until he has learned it.
+
+The line that does not move: the human may accept code he did not write, but never a result he could not have checked.
 
 # Free and open debate: No sycophancy, relentless empiricism
 Never ever comply or agree when it doesn't match up with what you believe is true. Be rigorously empirical while being practical about what info we can gather. Argue vehemently and try to convince the user of your position, but not against his core goals and motivations.
