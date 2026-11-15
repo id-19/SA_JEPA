@@ -102,7 +102,7 @@ Silent-failure skills in this list: the three loss rows, masks, the gradient cut
    [1.4] Single-step path for generation ... ID1-282     spec and check    1    2
 
 2  Model parts ............................. ID1-148
-   [2.1] Residual block and layout string .. ID1-283     spec and check    1    2   first time: you write the block
+   [2.1] Residual block and layout string .. ID1-283     spec and check    1    2   ← now: you write the block
    [2.2] Chunk encoder ..................... ID1-284     spec and check    2    4   first time: pooling; you write the leak test
    [2.3] Predictor ......................... ID1-285     spec and check    2    4   you write the causality test
    [2.4] Probe decoder ..................... ID1-286     spec and check    1    4
@@ -116,7 +116,7 @@ Silent-failure skills in this list: the three loss rows, masks, the gradient cut
    [3.5] Paired text, good views ........... ID1-306     delegate          0    –   you choose the sources
 
 4  Training loop ........................... ID1-218
-   [4.1] Rewrite SIGReg .................... ID1-291     HAND-BUILD        4    4   ← your next hand-build
+   [4.1] Rewrite SIGReg .................... ID1-291     HAND-BUILD        4    4   ← your next hand-build, after the block
    [4.2] Weighted prediction loss .......... ID1-292     HAND-BUILD        1    1
    [4.3] Stage-1 loop, overfit one batch ... ID1-293     HAND-BUILD        4    8   step, optimiser, schedule; agent adds checkpoints
    [4.4] Detached probe .................... ID1-294     spec and check    1    2   you write the no-gradient test
@@ -148,7 +148,7 @@ Readouts moved toward you, not away. On 12 Nov they were mine end to end. They a
 You and the agents no longer work on the same ticket at the same time.
 
 ```
-Your track:    [1.2 check] → [4.1] → [4.2] → [4.5] → specs for [2.1]–[2.4] → [4.3 bare step] → [2.5] → [7.1] → [7.2]
+Your track:    [1.2 check] → [2.1 block] → [4.1] → [4.2] → [4.5] → specs for [2.1 stack]–[2.4] → [4.3 bare step] → [2.5] → [7.1] → [7.2]
                      choices, early: tokenizer [3.1], chunk rule [3.2], dataset [3.4], pair sources [3.5]
 
 Agent track:   [1.3], [1.4] exist → [3.1], [3.3] → [2.1]–[2.4] as each spec lands → [3.4], [3.5] → [4.3 plumbing],
@@ -158,7 +158,9 @@ Agent track:   [1.3], [1.4] exist → [3.1], [3.3] → [2.1]–[2.4] as each spe
 
 The tracks meet at [4.3], the first time one batch trains end to end. That step is yours.
 
-The choices come early because they are the only things that block the agent track, and each takes minutes, not days. You are away 20 Nov to 4 Dec. Agents cannot choose a dataset or approve spend for you, so whatever is undecided on 20 Nov waits until you are back.
+The choices come early because they are the only things that block the agent track, and each takes minutes, not days. From 20 Nov to 4 Dec you work at a reduced pace, so the agent track should not be waiting on you then. Agents cannot choose a dataset or approve spend for you.
+
+**Changed 15 Nov.** The block in [2.1] moved to the front of your track. You chose to write it yourself first "just to get a clean idea". It is small (1 point), its scaffold already existed, and the agents' stack and [2.2]–[2.4] all sit on it. The stack itself stays agent-built from your invariants, which are still due with the other phase-2 specs.
 
 ## Which layers the model uses
 
