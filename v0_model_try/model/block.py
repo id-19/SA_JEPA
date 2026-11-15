@@ -18,16 +18,16 @@ from torch import nn
 
 
 class MLP(nn.Module):
-    def __init__(self, d_model, d_ff, depth=2) -> None:
+    def __init__(self, d_model, d_ff, get_mlp_non_lin, depth=2) -> None:
         super().__init__()
         self.d_model = d_model
         self.d_ff = d_ff
         self.in_proj = nn.Linear(d_model, d_ff)
         layers = []
-        layers.append(nn.SiLU())
+        layers.append(get_mlp_non_lin(d_ff))
         for _ in range(depth):
             layers.append(nn.Linear(d_ff, d_ff))
-            layers.append(nn.SiLU())
+            layers.append(get_mlp_non_lin(d_ff))
         self.layers = nn.Sequential(*layers)
         self.out_proj = nn.Linear(d_ff, d_model)
 
@@ -37,7 +37,7 @@ class MLP(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, d_model, mixer, d_ff):
+    def __init__(self, d_model, mixer, d_ff, get_non_lin=lambda x: nn.RMSNorm(x), get_mlp_non_lin = lambda x:nn.SiLU()):
         """Contract (what the tests rely on):
 
         - The tests read the attributes `self.norm1`, `self.mixer`, `self.norm2`, `self.mlp`.
@@ -48,10 +48,10 @@ class Block(nn.Module):
           (torch.nn.RMSNorm or your own).
         """
         super().__init__()
-        self.norm1 = nn.RMSNorm(d_model)
+        self.norm1 = get_non_lin(d_model)
         self.mixer = mixer
-        self.norm2 = nn.RMSNorm(d_model)
-        self.mlp = MLP(d_model, d_ff)
+        self.norm2 = get_non_lin(d_model)
+        self.mlp = MLP(d_model, d_ff, get_mlp_non_lin)
 
 
     def forward(self, x, state=None, return_state=False):
