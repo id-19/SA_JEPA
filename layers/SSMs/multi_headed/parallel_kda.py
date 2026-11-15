@@ -6,8 +6,10 @@ from torch.linalg import solve_triangular as tri_solve
 # [1.2] ID1-280: multi-head chunked KDA. Starts as a copy of single_headed/parallel_kda.py;
 # add the head axis and nothing else. Contract the tests copy weights through (D_qk, D_v are total widths,
 # head h owns columns h*D_qk//n_heads : (h+1)*D_qk//n_heads, likewise for v and the rows of W_o):
-#   W_q, W_k, W_a: (D_input, D_qk)    W_v: (D_input, D_v)    W_o: (D_v, D_output)
-#   W_b:           (D_input, n_heads)
+#   W_q, W_k: (D_input, D_qk)    W_v: (D_input, D_v)    W_o: (D_v, D_output)
+#   W_b:      (D_input, n_heads)
+# Low-rank decay (as Kimi Linear): alpha logits = (x @ W_a_high) @ W_a_low + a_bias, one per key channel:
+#   W_a_high: (D_input, hdim_v)    W_a_low: (hdim_v, D_qk)    a_bias: (D_qk,) init zeros
 # output_gate=True adds (applied per head to O before W_o: O = rms_norm(O) * sigmoid((x @ W_g_high) @ W_g_low)):
 #   o_norm_weight: (hdim_v,) shared across heads, init ones    W_g_high: (D_input, hdim_v)    W_g_low: (hdim_v, D_v)
 # Tests: eval_test/tests/test_multihead_kda.py, eval_test/tests/test_kda_conv_state.py
@@ -47,8 +49,11 @@ class MultiHeadParallelKDA(nn.Module):
         # Write strength - beta, one per head
         self.W_b = nn.Parameter(torch.randn((D_input, n_heads)) / (D_input ** 0.5)) # Takes (B,T,C) -> (B,T,H)
 
-        # Alpha for decay, one per key channel; split into (H, hdim_qk) like K
-        self.W_a = nn.Parameter(torch.randn((D_input, D_qk))/ (D_input**0.5))
+        # Alpha for decay, one per key channel; split into (H, hdim_qk) like K. Low-rank (D_input -> hdim_v -> D_qk) as in Kimi Linear.
+        # a_bias sets each channel's decay at init (Kimi's dt_bias); a low-rank map cannot add a constant to every logit.
+        self.W_a_high = nn.Parameter(torch.randn((D_input, self.hdim_v)) * (1.0 / (D_input ** 0.5)))
+        self.W_a_low = nn.Parameter(torch.randn((self.hdim_v, D_qk)) * (1.0 / (self.hdim_v ** 0.5)))
+        self.a_bias = nn.Parameter(torch.zeros(D_qk))
 
         # Output norm (per head, over hdim_v, weight shared across heads) and low-rank gate
         if output_gate:
@@ -78,7 +83,7 @@ class MultiHeadParallelKDA(nn.Module):
             k = K[:, :, t]
             v = V[:, :, t]
             # alpha and beta
-            alpha = torch.sigmoid(input @ self.W_a).view(B, self.n_heads, self.hdim_qk)
+            alpha = torch.sigmoid((input @ self.W_a_high) @ self.W_a_low + self.a_bias).view(B, self.n_heads, self.hdim_qk)
             beta = torch.sigmoid(input @ self.W_b) # (B, H), unsqueezed where used
 
             # Write state update, decaying each key row of S by its own alpha
@@ -183,7 +188,7 @@ class MultiHeadParallelKDA(nn.Module):
             # 1. B, one write strength per head
             B = torch.sigmoid(input @ self.W_b).transpose(1, 2).to(ft)  # (B, H, T), feeds the solve
             # 2. Alpha / cumulative decay in log space
-            raw_alpha = (input @ self.W_a).view(bsize, lc, self.n_heads, self.hdim_qk).transpose(1, 2)  # (B, H, T, hdim_qk)
+            raw_alpha = ((input @ self.W_a_high) @ self.W_a_low + self.a_bias).view(bsize, lc, self.n_heads, self.hdim_qk).transpose(1, 2)  # (B, H, T, hdim_qk)
             log_alpha = Fn.logsigmoid(raw_alpha.to(ft))  # [1] cumsum in low precision drifts
             log_d = torch.cumsum(log_alpha, dim=2)  # (B, H, L, K)
             D = torch.exp(log_d.clamp(min=-88.0))  # (B, H, L, K)

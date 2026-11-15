@@ -44,7 +44,9 @@ def test_weight_shapes_follow_contract(H):
     assert m.W_q.shape == (D_IN, D_QK)
     assert m.W_k.shape == (D_IN, D_QK)
     assert m.W_v.shape == (D_IN, D_V)
-    assert m.W_a.shape == (D_IN, D_QK)
+    assert m.W_a_high.shape == (D_IN, D_V // H)
+    assert m.W_a_low.shape == (D_V // H, D_QK)
+    assert m.a_bias.shape == (D_QK,)
     assert m.W_b.shape == (D_IN, H)
     assert m.W_o.shape == (D_V, D_OUT)
 

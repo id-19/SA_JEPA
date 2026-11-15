@@ -68,7 +68,7 @@ def oracle(m, x):
     q = F.normalize(F.silu(causal_conv(x @ m.W_q, m.Q_conv, k)).view(Bx, Tx, H, dqk), dim=-1)
     kk = F.normalize(F.silu(causal_conv(x @ m.W_k, m.K_conv, k)).view(Bx, Tx, H, dqk), dim=-1)
     v = F.silu(causal_conv(x @ m.W_v, m.V_conv, k)).view(Bx, Tx, H, dv)
-    alpha = torch.sigmoid(x @ m.W_a).view(Bx, Tx, H, dqk)
+    alpha = torch.sigmoid((x @ m.W_a_high) @ m.W_a_low + m.a_bias).view(Bx, Tx, H, dqk)
     beta = torch.sigmoid(x @ m.W_b)                            # (B, T, H)
     S = x.new_zeros(Bx, H, dqk, dv)
     ys = []
@@ -118,11 +118,10 @@ def stream(m, x, pieces, chunk=16, state=None):
 def slow_forgetting(m, x):
     """Push alpha to ~0.97 (mean). At init alpha averages 0.5, so the last output depends on tokens 30 back
     by only ~1e-7 and the tests above see ~25 tokens of memory. Here 100 tokens back still shows at ~1e-5.
-    Feature 0 of x is set to 1 and its row of W_a gets +4, which adds 4 to every alpha logit."""
+    a_bias gets +4, which adds 4 to every alpha logit (x is returned as a clone, otherwise unchanged)."""
     x = x.clone()
-    x[..., 0] = 1.0
     with torch.no_grad():
-        m.W_a[0] += 4.0
+        m.a_bias += 4.0
     return m, x
 
 
@@ -169,7 +168,7 @@ def test_oracle_recurrence_matches_reference():
     q = F.normalize(heads(F.silu(causal_conv(x @ m.W_q, m.Q_conv, k)), dqk), dim=-1)
     kk = F.normalize(heads(F.silu(causal_conv(x @ m.W_k, m.K_conv, k)), dqk), dim=-1)
     v = heads(F.silu(causal_conv(x @ m.W_v, m.V_conv, k)), dv)
-    g = heads(F.logsigmoid(x @ m.W_a), dqk)
+    g = heads(F.logsigmoid((x @ m.W_a_high) @ m.W_a_low + m.a_bias), dqk)
     beta = torch.sigmoid(x @ m.W_b).transpose(1, 2)
     o, _ = recurrent_kda(q, kk, v, g, beta, scale=1.0)
     torch.testing.assert_close(oracle(m, x), o.transpose(1, 2).reshape(Bx, Tx, D_V) @ m.W_o, **TIGHT)
