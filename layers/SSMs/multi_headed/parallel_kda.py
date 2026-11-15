@@ -8,7 +8,7 @@ from torch.linalg import solve_triangular as tri_solve
 # head h owns columns h*D_qk//n_heads : (h+1)*D_qk//n_heads, likewise for v and the rows of W_o):
 #   W_q, W_k, W_a: (D_input, D_qk)    W_v: (D_input, D_v)    W_o: (D_v, D_output)
 #   W_b:           (D_input, n_heads)
-# Tests: eval_test/tests/test_multihead_kda.py
+# Tests: eval_test/tests/test_multihead_kda.py, eval_test/tests/test_kda_conv_state.py
 
 class MultiHeadParallelKDA(nn.Module):
     def __init__(self, D_input, D_output, D_qk, D_v, n_heads, kernel_size = 4) -> None:
@@ -48,13 +48,19 @@ class MultiHeadParallelKDA(nn.Module):
         self.W_a = nn.Parameter(torch.randn((D_input, D_qk))/ (D_input**0.5))
 
 
-    def legacy_out(self, x, return_state = False, q_conv_in=None, k_conv_in = None, v_conv_in = None):
+    def legacy_out(self, x, state=None, return_state=False):
         # S_t = alpha * S_(t-1) + beta * k_t * Error  // Write the error to correct address, (K) @ (V)-> (K, V) correct
         # Error = v_t - k_t . S_(t-1)
         # Solve this equation you get(equivalent)
         # S_(t+1) = alpha * (I - beta * k_t^T * k_t) * S_t + beta * k_t * v_t
+        # state: None for a fresh sequence, else the tuple (S, q_conv_in, k_conv_in, v_conv_in) that forward or legacy_out returned
         B,T,_ = x.shape
-        S = torch.zeros((B, self.n_heads, self.hdim_qk, self.hdim_v), device=x.device, dtype=x.dtype) # (B, H, hdim_qk, hdim_v)
+        if state is None:
+            S = torch.zeros((B, self.n_heads, self.hdim_qk, self.hdim_v), device=x.device, dtype=x.dtype) # (B, H, hdim_qk, hdim_v)
+            q_conv_in = k_conv_in = v_conv_in = None
+        else:
+            S, q_conv_in, k_conv_in, v_conv_in = state
+            S = S.to(x.dtype)
         Q,K,V,q_conv_in, k_conv_in, v_conv_in = self.get_qkv(x, q_conv_in, k_conv_in, v_conv_in) # (B, H, T, hdim)
         output = []
         for t in range(T):
@@ -78,7 +84,7 @@ class MultiHeadParallelKDA(nn.Module):
             O = O.view(B, self.D_v)
 
             output.append(O @ self.W_o)
-        return (torch.stack(output, dim=1), S, q_conv_in, k_conv_in, v_conv_in) if return_state else torch.stack(output, dim=1)
+        return (torch.stack(output, dim=1), (S, q_conv_in, k_conv_in, v_conv_in)) if return_state else torch.stack(output, dim=1)
 
     def get_qkv(self, input, q_conv_in=None, k_conv_in = None, v_conv_in = None):
         bsize, T, _ = input.shape
@@ -88,7 +94,6 @@ class MultiHeadParallelKDA(nn.Module):
         v = input @ self.W_v
         # First transpose
         q = q.transpose(-1, -2)
-        # print("Q dims after transpose:", q.shape)
         k = k.transpose(-1, -2)
         v = v.transpose(-1, -2)
         # Cat with input conv
@@ -101,11 +106,8 @@ class MultiHeadParallelKDA(nn.Module):
             v = torch.cat((v_conv_in, v), dim=-1)
         # Left pad for conv
         # q,k,v have same timesteps
-        # print("q dims after some messery:", q.shape)
         padding_needed = (T + self.kernel_size - 1) - q.shape[-1]
-        # print(padding_needed)
         q = Fn.pad(q, (padding_needed, 0))
-        # print("q dims after messery:", q.shape)
         k = Fn.pad(k, (padding_needed, 0))
         v = Fn.pad(v, (padding_needed, 0))
         # Get carry
@@ -129,7 +131,7 @@ class MultiHeadParallelKDA(nn.Module):
         q = q.view(bsize, T, self.n_heads, self.hdim_qk).transpose(-2, -3)
         k = k.view(bsize, T, self.n_heads, self.hdim_qk).transpose(-2, -3)
         v = v.view(bsize, T, self.n_heads, self.hdim_v).transpose(-2, -3)
-        # Apply L2 norm to q, k- q / max(|q|)
+        # Apply L2 norm to q, k: q / ||q|| per head
         q = Fn.normalize(q, dim=-1)
         k = Fn.normalize(k, dim=-1)
 
@@ -166,7 +168,6 @@ class MultiHeadParallelKDA(nn.Module):
             # Also, get the carry convs for the next layer as well
             Qraw,K,V,q_conv_in, k_conv_in, v_conv_in = self.get_qkv(input, q_conv_in, k_conv_in, v_conv_in)
 
-            # print(f"For cs={cs}: Qraw:{Qraw}")
             # 1. B, one write strength per head
             B = torch.sigmoid(input @ self.W_b).transpose(1, 2).to(ft)  # (B, H, T), feeds the solve
             # 2. Alpha / cumulative decay in log space
@@ -219,17 +220,11 @@ if __name__ == '__main__':
     m = MultiHeadParallelKDA(D_input = 3, D_output = 7, D_qk = 8, D_v = 12, n_heads = 4)
     # Full data
     out, s = m(data[:, 0:2], return_state=True)
-    # print("For full run, state dims:", [x.shape for x in s])
-    # print("Q_conv_in for run from 0:2:", s[1])
     out, s = m(data[:, 2:4], state=s, return_state=True)
     k = 2
     outs = []
     state = None
     for i in range(0, 4, k):
         out1, state = m(data[:, i:i+k], state=state, return_state=True)
-        # print(f"Q_conv_in for i:{i}:", state[1])
-        # print("state dimensions are", [x.shape for x in state])
         outs.append(out1)
     out2 = torch.cat(outs, dim=1)
-    # print(out.shape, out2.shape)
-    # print(out2 - out)
