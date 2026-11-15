@@ -8,10 +8,12 @@ from torch.linalg import solve_triangular as tri_solve
 # head h owns columns h*D_qk//n_heads : (h+1)*D_qk//n_heads, likewise for v and the rows of W_o):
 #   W_q, W_k, W_a: (D_input, D_qk)    W_v: (D_input, D_v)    W_o: (D_v, D_output)
 #   W_b:           (D_input, n_heads)
+# output_gate=True adds (applied per head to O before W_o: O = rms_norm(O) * sigmoid((x @ W_g_high) @ W_g_low)):
+#   o_norm_weight: (hdim_v,) shared across heads, init ones    W_g_high: (D_input, hdim_v)    W_g_low: (hdim_v, D_v)
 # Tests: eval_test/tests/test_multihead_kda.py, eval_test/tests/test_kda_conv_state.py
 
 class MultiHeadParallelKDA(nn.Module):
-    def __init__(self, D_input, D_output, D_qk, D_v, n_heads, kernel_size = 4) -> None:
+    def __init__(self, D_input, D_output, D_qk, D_v, n_heads, kernel_size = 4, output_gate=True) -> None:
         super().__init__()
         # Can specify qk, v, params differnetly for sake of curiosity
         self.D_input = D_input
@@ -24,6 +26,7 @@ class MultiHeadParallelKDA(nn.Module):
         self.hdim_v = D_v // n_heads
 
         self.kernel_size = kernel_size
+        self.output_gate = output_gate
 
         # Initialise W_k, W_q and W_v
         self.W_q = nn.Parameter(torch.randn((D_input, D_qk)) * (1.0 / (D_input ** 0.5)))
@@ -46,6 +49,12 @@ class MultiHeadParallelKDA(nn.Module):
 
         # Alpha for decay, one per key channel; split into (H, hdim_qk) like K
         self.W_a = nn.Parameter(torch.randn((D_input, D_qk))/ (D_input**0.5))
+
+        # Output norm (per head, over hdim_v, weight shared across heads) and low-rank gate
+        if output_gate:
+            self.o_norm_weight = nn.Parameter(torch.ones(self.hdim_v))
+            self.W_g_high = nn.Parameter(torch.randn((D_input, self.hdim_v)) * (1.0 / (D_input ** 0.5)))
+            self.W_g_low = nn.Parameter(torch.randn((self.hdim_v, D_v)) * (1.0 / (self.hdim_v ** 0.5)))
 
 
     def legacy_out(self, x, state=None, return_state=False):
@@ -81,7 +90,10 @@ class MultiHeadParallelKDA(nn.Module):
 
             # Output proj
             O = torch.einsum('bhkv,bhk->bhv', S, q)
-            O = O.view(B, self.D_v)
+            if self.output_gate:
+                O = Fn.rms_norm(O, (self.hdim_v,), self.o_norm_weight.to(O.dtype), 1e-5)
+                O = O * torch.sigmoid((input @ self.W_g_high) @ self.W_g_low).view(B, self.n_heads, self.hdim_v)
+            O = O.reshape(B, self.D_v)
 
             output.append(O @ self.W_o)
         return (torch.stack(output, dim=1), (S, q_conv_in, k_conv_in, v_conv_in)) if return_state else torch.stack(output, dim=1)
@@ -201,6 +213,11 @@ class MultiHeadParallelKDA(nn.Module):
             E = U - torch.einsum('bhtk,bhkv->bhtv', W, S_in)  # [3] (B, H, L, hdim_v)
             Qsc = D * Qraw  # (B, H, L, hdim_qk), promotes to ft through D
             O = torch.einsum('bhtq,bhqv->bhtv', Qsc, S_in) + scores.to(ft) @ E  # [3] (B, H, L, hdim_v)
+            if self.output_gate:
+                # per-head RMSNorm in ft, then gate from this chunk's input, split into heads like V
+                O = Fn.rms_norm(O, (self.hdim_v,), self.o_norm_weight.to(ft), 1e-5)
+                gate = torch.sigmoid((input @ self.W_g_high) @ self.W_g_low).view(bsize, lc, self.n_heads, self.hdim_v).transpose(1, 2)
+                O = O * gate
             O = O.transpose(1, 2).reshape(bsize, lc, self.D_v).to(dt)  # (B, L, D_v)
 
             # 6. Carry state (stable)

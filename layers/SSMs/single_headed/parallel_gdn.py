@@ -72,13 +72,13 @@ class ParallelGatedDeltaNet(nn.Module):
 
     def forward(self, x, chunk_size = 32):
         # Some operations aren't very good for kernels, but just implement a parallel version rn
-        # Accumulate in at least fp32 (fp64 stays fp64 for gradcheck); cast back on the way out
-        out_dtype = x.dtype
-        cdtype = torch.promote_types(x.dtype, torch.float32)
-        x = x.to(cdtype)
-        W_q, W_k, W_v, W_b, W_a, W_o = (p.to(cdtype) for p in (self.W_q, self.W_k, self.W_v, self.W_b, self.W_a, self.W_o))
+        # Projections and score matmuls run in x.dtype (bf16/fp16 ok). The decay cumsum, both triangular
+        # solves and the carried state S run in at least fp32 (fp64 stays fp64 for gradcheck)
+        dt = x.dtype
+        ft = torch.promote_types(dt, torch.float32)
+        W_q, W_k, W_v, W_b, W_a, W_o = (p.to(dt) for p in (self.W_q, self.W_k, self.W_v, self.W_b, self.W_a, self.W_o))
         bsize,T,_ = x.shape
-        S_in = torch.zeros((bsize, self.D_qk, self.D_v), device=x.device, dtype=x.dtype)
+        S_in = torch.zeros((bsize, self.D_qk, self.D_v), device=x.device, dtype=ft)
         outputs = []
         for cs in range(0, T, chunk_size):
             input = x[:, cs:cs+chunk_size]
@@ -92,7 +92,7 @@ class ParallelGatedDeltaNet(nn.Module):
             # 2. Alpha, g and G
             # Use log form because products underflow to zero, add clamps if it still breaks
             Alpha = input @ W_a # (B, C, D_input) @ (D_input) -> B, C
-            log_alpha = torch.nn.functional.logsigmoid(Alpha)
+            log_alpha = torch.nn.functional.logsigmoid(Alpha.to(ft)) # cumsum in low precision drifts
             log_g = torch.cumsum(log_alpha, dim=-1)
             g = torch.exp(log_g) # (B, C)
             G = (log_g.unsqueeze(dim=-1) - log_g.unsqueeze(dim=-2)) # (B, C, 1) / (B, 1, C) -> B, C, C
@@ -100,27 +100,28 @@ class ParallelGatedDeltaNet(nn.Module):
             G = torch.exp(G.clamp(-88.0, 88.0))
             # 3. W and U
             # W is same as before
-            g_matrix = torch.tril(torch.einsum('bsk, btk->bst', K, K), diagonal=-1) # OG matrix named after Scandinavian guy
-            A_w = torch.eye(lc, device=x.device, dtype=x.dtype) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), g_matrix)
-            # MPS triangular solve is fp32-only; x is already at least fp32 here
-            W = torch.linalg.solve_triangular(A_w, D * K, upper=False, unitriangular=True)
+            g_matrix = torch.tril(torch.einsum('bsk, btk->bst', K, K), diagonal=-1).to(ft) # OG matrix named after Scandinavian guy
+            D = D.to(ft)
+            A_w = torch.eye(lc, device=x.device, dtype=ft) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), g_matrix)
+            # Solves in fp32: ill-conditioning feeds errors into the state, and MPS triangular solve is fp32-only
+            W = torch.linalg.solve_triangular(A_w, D * K.to(ft), upper=False, unitriangular=True)
             # U is different
             decayed_G = G * g_matrix # Both are (C,C)
-            A_u = torch.eye(lc, device=x.device, dtype=x.dtype) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), decayed_G)
-            U = torch.linalg.solve_triangular(A_u, D * V, upper=False, unitriangular=True)
-            # 4. Output projection
+            A_u = torch.eye(lc, device=x.device, dtype=ft) + torch.einsum('bs,bst->bst', D.squeeze(dim=-1), decayed_G)
+            U = torch.linalg.solve_triangular(A_u, D * V.to(ft), upper=False, unitriangular=True)
+            # 4. Output projection (fp32 from here: everything below touches S)
             E = U - torch.einsum('bck,bkv->bcv', g.unsqueeze(-1) * W, S_in)
             chunk_scores = G * torch.tril(torch.einsum('bck,bsk->bcs', Q, K))
             carry_out = torch.einsum('bsk,bkv->bsv',(g.unsqueeze(dim=-1) * Q), S_in)
             O = carry_out + chunk_scores @ E
             # 5. Carry state
             E_carry = G[:, -1].unsqueeze(dim=-1) * E
-            S_in = g[:, -1].view(bsize, 1, 1) * S_in + torch.einsum('bsk, bsv->bkv',K, E_carry)
+            S_in = g[:, -1].view(bsize, 1, 1) * S_in + torch.einsum('bsk, bsv->bkv',K.to(ft), E_carry)
 
             # Append to outputs
-            outputs.append(torch.einsum('bcv,vo->bco', O, W_o))
+            outputs.append(torch.einsum('bcv,vo->bco', O.to(dt), W_o))
 
-        return torch.cat(outputs, dim=1).to(out_dtype)
+        return torch.cat(outputs, dim=1)
 
 
 def grad_check():
